@@ -1,5 +1,5 @@
 {
   "appId": "com.yathralanka.app",
   "appName": "YathraLanka",
-  "webDir": "."
+  "webDir": "www"
 }
