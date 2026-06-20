@@ -1,5 +1,7 @@
 // YathraLanka App Logic Engine
 import { initialUserState, rankingScale, leaderboardPlayers, sitesData, sideQuestsData, rewardsData } from './data.js';
+import { auth } from './firebase-init.js';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 
 // --- APPLICATION STATE ---
 let state = {
@@ -1758,7 +1760,7 @@ function renderLeaderboard() {
   // Dynamically insert user if they have XP > 0
   let currentList = [...leaderboardPlayers];
   if (state.user.xp > 0) {
-    const userRow = { name: "You (Eco Explorer)", points: state.user.xp, role: state.user.role, rank: state.user.rank, isUser: true };
+    const userRow = { name: (auth.currentUser ? auth.currentUser.displayName || 'You' : 'You') + " (Eco Explorer)", points: state.user.xp, role: state.user.role, rank: state.user.rank, isUser: true };
     currentList.push(userRow);
   }
   
@@ -1815,7 +1817,7 @@ function renderProfile() {
       <div class="selection-card" style="margin: 10px 16px; padding: 14px;" id="profile-recap-trigger">
         <img src="icons/profile filled.png" alt="Profile" style="width: 44px; height: 44px; border-radius: 50%; border: 2.5px solid var(--color-teal);">
         <div style="flex: 1; margin-left: 10px;">
-          <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 2px;">You</h3>
+          <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 2px;">${auth.currentUser ? auth.currentUser.displayName || 'You' : 'You'}</h3>
           <p style="font-size: 11px; color: var(--color-gray); font-weight: 700;">${currentRankName} • ${state.user.xp} pts</p>
         </div>
       </div>
@@ -2004,10 +2006,21 @@ function attachEvents() {
   bind('login-toggle-signup', 'click', () => navigate('signup', false));
   bind('login-submit', 'click', () => {
     const email = document.getElementById('login-email').value;
-    if (email) {
-      state.user.role = 'Explorer'; // mock role reset
-      navigate('permissions');
+    const pass = document.getElementById('login-pass').value;
+    if (!email || !pass) {
+      showNotification("Please fill in all fields.");
+      return;
     }
+    signInWithEmailAndPassword(auth, email, pass)
+      .then((userCredential) => {
+        state.user = { ...initialUserState };
+        state.user.role = 'Explorer';
+        navigate('permissions');
+        showNotification("Welcome back, " + (userCredential.user.displayName || "Explorer") + "!");
+      })
+      .catch((error) => {
+        showNotification(error.message);
+      });
   });
   bind('login-eye', 'click', () => {
     const input = document.getElementById('login-pass');
@@ -2021,9 +2034,29 @@ function attachEvents() {
   bind('signup-toggle-login', 'click', () => navigate('login', false));
   bind('signup-submit', 'click', () => {
     const name = document.getElementById('signup-name').value;
-    if (name) {
-      navigate('permissions');
+    const email = document.getElementById('signup-email').value;
+    const pass = document.getElementById('signup-pass').value;
+    const confirm = document.getElementById('signup-confirm').value;
+    if (!name || !email || !pass || !confirm) {
+      showNotification("Please fill in all fields.");
+      return;
     }
+    if (pass !== confirm) {
+      showNotification("Passwords do not match.");
+      return;
+    }
+    createUserWithEmailAndPassword(auth, email, pass)
+      .then((userCredential) => {
+        return updateProfile(userCredential.user, { displayName: name });
+      })
+      .then(() => {
+        state.user = { ...initialUserState };
+        navigate('permissions');
+        showNotification("Account created successfully!");
+      })
+      .catch((error) => {
+        showNotification(error.message);
+      });
   });
   
   // 4. Permissions Screen
@@ -2481,14 +2514,20 @@ function attachEvents() {
   bind('settings-back', 'click', () => goBack());
   bind('sett-perm', 'click', () => navigate('permissions'));
   bind('sett-logout', 'click', () => {
-    // Reset state on logout
-    state.user = { ...initialUserState };
-    state.user.permissions = { camera: false, notifications: false };
-    state.petitionSignatures = 8742;
-    state.petitionSigned = false;
-    state.navStack = [];
-    navigate('splash');
-    showNotification("Logged out successfully.");
+    signOut(auth)
+      .then(() => {
+        // Reset state on logout
+        state.user = { ...initialUserState };
+        state.user.permissions = { camera: false, notifications: false };
+        state.petitionSignatures = 8742;
+        state.petitionSigned = false;
+        state.navStack = [];
+        navigate('splash');
+        showNotification("Logged out successfully.");
+      })
+      .catch((error) => {
+        showNotification("Logout failed: " + error.message);
+      });
   });
   
   // --- BOTTOM NAV BAR TRIGGERS ---
