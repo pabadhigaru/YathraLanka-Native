@@ -2111,7 +2111,7 @@ function attachEvents() {
         
         const firebasePromise = createUserWithEmailAndPassword(auth, email, pass);
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("NETWORK TIMEOUT: Firebase did not respond.")), 5000);
+          setTimeout(() => reject(new Error("NETWORK TIMEOUT: Firebase did not respond. navigator.onLine status: " + navigator.onLine)), 15000);
         });
         
         Promise.race([firebasePromise, timeoutPromise])

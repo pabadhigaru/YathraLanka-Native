@@ -13,6 +13,7 @@ const firebaseConfig = {
   messagingSenderId: "1032179534120"
 };
 
+console.log("Config keys being used:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const auth = getAuth(app);
