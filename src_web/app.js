@@ -2109,7 +2109,12 @@ function attachEvents() {
         alert("DEBUG: Auth object type is " + typeof auth);
         alert("DEBUG: createUserWithEmailAndPassword type is " + typeof createUserWithEmailAndPassword);
         
-        createUserWithEmailAndPassword(auth, email, pass)
+        const firebasePromise = createUserWithEmailAndPassword(auth, email, pass);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("NETWORK TIMEOUT: Firebase did not respond.")), 5000);
+        });
+        
+        Promise.race([firebasePromise, timeoutPromise])
           .then((userCredential) => {
             alert("DEBUG: Auth Success!");
             state.user = { ...initialUserState };
