@@ -2071,32 +2071,48 @@ function attachEvents() {
   // 3. Sign Up Screen
   bind('signup-back', 'click', () => goBack());
   bind('signup-toggle-login', 'click', () => navigate('login', false));
-  bind('signup-submit', 'click', () => {
-    const name = document.querySelector('#signup-name').value.trim();
-    const email = document.querySelector('#signup-user-email').value.trim();
-    const pass = document.querySelector('#signup-pass').value;
-    const confirm = document.querySelector('#signup-confirm').value;
-    if (!name || !email || !pass || !confirm) {
-      showNotification("Please fill in all fields.");
-      return;
-    }
-    if (pass !== confirm) {
-      showNotification("Passwords do not match.");
-      return;
-    }
-    createUserWithEmailAndPassword(auth, email, pass)
-      .then((userCredential) => {
-        try {
-          alert("Auth Success! Attempting to navigate to permissions...");
-          navigate('permissions');
-        } catch (navError) {
-          alert("Navigation Failed Error: " + navError.message);
-        }
-      })
-      .catch((authError) => {
-        alert("Auth Error: " + authError.message);
-      });
-  });
+  const signupBtn = document.getElementById('signup-submit');
+  if (signupBtn) {
+    const freshBtn = signupBtn.cloneNode(true);
+    signupBtn.parentNode.replaceChild(freshBtn, signupBtn);
+    freshBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      freshBtn.disabled = true;
+      freshBtn.style.opacity = '0.5';
+      
+      const name = document.querySelector('#signup-name').value.trim();
+      const email = document.querySelector('#signup-user-email').value.trim();
+      const pass = document.querySelector('#signup-pass').value;
+      const confirm = document.querySelector('#signup-confirm').value;
+      if (!name || !email || !pass || !confirm) {
+        showNotification("Please fill in all fields.");
+        freshBtn.disabled = false;
+        freshBtn.style.opacity = '1';
+        return;
+      }
+      if (pass !== confirm) {
+        showNotification("Passwords do not match.");
+        freshBtn.disabled = false;
+        freshBtn.style.opacity = '1';
+        return;
+      }
+      createUserWithEmailAndPassword(auth, email, pass)
+        .then((userCredential) => {
+          try {
+            alert("Auth Success! Attempting to navigate to permissions...");
+            navigate('permissions');
+          } catch (navError) {
+            alert("Navigation Failed Error: " + navError.message);
+          }
+        })
+        .catch((authError) => {
+          alert("Auth Error: " + authError.message);
+          freshBtn.disabled = false;
+          freshBtn.style.opacity = '1';
+        });
+    });
+  }
   
   // 4. Permissions Screen
   bind('perm-camera-btn', 'click', () => {
