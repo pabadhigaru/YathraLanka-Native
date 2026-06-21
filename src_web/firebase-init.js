@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth } from "firebase/auth";
+import { initializeAuth, indexedDBLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -16,7 +16,9 @@ const firebaseConfig = {
 console.log("Config keys being used:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
-const auth = getAuth(app);
+const auth = initializeAuth(app, {
+  persistence: indexedDBLocalPersistence
+});
 const db = getFirestore(app);
 
 export { app, analytics, auth, db };
