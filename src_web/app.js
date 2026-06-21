@@ -352,7 +352,7 @@ function renderSignUp() {
         
         <div class="form-group">
           <label class="form-label">Email</label>
-          <input type="email" class="form-input" placeholder="Enter email" id="signup-email" autocomplete="off">
+          <input type="email" class="form-input" placeholder="Enter email" id="signup-user-email" autocomplete="off">
         </div>
         
         <div class="form-group">
@@ -2034,7 +2034,7 @@ function attachEvents() {
   bind('signup-toggle-login', 'click', () => navigate('login', false));
   bind('signup-submit', 'click', () => {
     const name = document.querySelector('#signup-name').value.trim();
-    const email = document.querySelector('#signup-email').value.trim();
+    const email = document.querySelector('#signup-user-email').value.trim();
     const pass = document.querySelector('#signup-pass').value;
     const confirm = document.querySelector('#signup-confirm').value;
     if (!name || !email || !pass || !confirm) {
