@@ -2081,10 +2081,18 @@ function attachEvents() {
       freshBtn.disabled = true;
       freshBtn.style.opacity = '0.5';
       
-      const name = document.querySelector('#signup-name').value.trim();
-      const email = document.querySelector('#signup-user-email').value.trim();
-      const pass = document.querySelector('#signup-pass').value;
-      const confirm = document.querySelector('#signup-confirm').value;
+      let name, email, pass, confirm;
+      try {
+        name = document.querySelector('#signup-name').value.trim();
+        email = document.querySelector('#signup-user-email').value.trim();
+        pass = document.querySelector('#signup-pass').value;
+        confirm = document.querySelector('#signup-confirm').value;
+      } catch (inputError) {
+        alert("DEBUG INPUT ERROR: " + inputError.message);
+        freshBtn.disabled = false;
+        freshBtn.style.opacity = '1';
+        return;
+      }
       if (!name || !email || !pass || !confirm) {
         showNotification("Please fill in all fields.");
         freshBtn.disabled = false;
@@ -2097,42 +2105,51 @@ function attachEvents() {
         freshBtn.style.opacity = '1';
         return;
       }
-      createUserWithEmailAndPassword(auth, email, pass)
-        .then((userCredential) => {
-          alert("DEBUG: Auth Success!");
-          try {
-            alert("DEBUG: About to save profile...");
-            state.user = { ...initialUserState };
-            
-            updateProfile(userCredential.user, { displayName: name })
-              .then(() => {
-                alert("DEBUG: Display name updated successfully!");
-              })
-              .catch(err => {
-                alert("DEBUG ERROR: Display name update failed: " + err.message);
-              });
+      try {
+        alert("DEBUG: Auth object type is " + typeof auth);
+        alert("DEBUG: createUserWithEmailAndPassword type is " + typeof createUserWithEmailAndPassword);
+        
+        createUserWithEmailAndPassword(auth, email, pass)
+          .then((userCredential) => {
+            alert("DEBUG: Auth Success!");
+            try {
+              alert("DEBUG: About to save profile...");
+              state.user = { ...initialUserState };
               
-            saveUserProfile()
-              .then(() => {
-                alert("DEBUG: Firestore profile save success!");
-              })
-              .catch(err => {
-                alert("DEBUG ERROR: Firestore profile save failed: " + err.message);
-              });
+              updateProfile(userCredential.user, { displayName: name })
+                .then(() => {
+                  alert("DEBUG: Display name updated successfully!");
+                })
+                .catch(err => {
+                  alert("DEBUG ERROR: Display name update failed: " + err.message);
+                });
+                
+              saveUserProfile()
+                .then(() => {
+                  alert("DEBUG: Firestore profile save success!");
+                })
+                .catch(err => {
+                  alert("DEBUG ERROR: Firestore profile save failed: " + err.message);
+                });
 
-            alert("DEBUG: About to navigate...");
-            navigate('permissions');
-          } catch (err) {
-            alert("DEBUG EXCEPTION: " + err.message);
+              alert("DEBUG: About to navigate...");
+              navigate('permissions');
+            } catch (err) {
+              alert("DEBUG EXCEPTION: " + err.message);
+              freshBtn.disabled = false;
+              freshBtn.style.opacity = '1';
+            }
+          })
+          .catch((authError) => {
+            alert("Auth Error: " + authError.message);
             freshBtn.disabled = false;
             freshBtn.style.opacity = '1';
-          }
-        })
-        .catch((authError) => {
-          alert("Auth Error: " + authError.message);
-          freshBtn.disabled = false;
-          freshBtn.style.opacity = '1';
-        });
+          });
+      } catch (outerError) {
+        alert("DEBUG OUTER CRASH: " + outerError.message);
+        freshBtn.disabled = false;
+        freshBtn.style.opacity = '1';
+      }
     });
   }
   
