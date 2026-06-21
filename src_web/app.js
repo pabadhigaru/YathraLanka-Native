@@ -2015,7 +2015,7 @@ function attachEvents() {
       .then((userCredential) => {
         state.user = { ...initialUserState };
         state.user.role = 'Explorer';
-        navigate('permissions');
+        navigate('dashboard');
         showNotification("Welcome back, " + (userCredential.user.displayName || "Explorer") + "!");
       })
       .catch((error) => {
@@ -2035,7 +2035,6 @@ function attachEvents() {
   bind('signup-submit', 'click', () => {
     const name = document.querySelector('#signup-name').value.trim();
     const email = document.querySelector('#signup-user-email').value.trim();
-    alert("DEBUG: The app is trying to register email: " + email);
     const pass = document.querySelector('#signup-pass').value;
     const confirm = document.querySelector('#signup-confirm').value;
     if (!name || !email || !pass || !confirm) {
@@ -2048,9 +2047,7 @@ function attachEvents() {
     }
     createUserWithEmailAndPassword(auth, email, pass)
       .then((userCredential) => {
-        return updateProfile(userCredential.user, { displayName: name });
-      })
-      .then(() => {
+        updateProfile(userCredential.user, { displayName: name }).catch(err => console.error("updateProfile failed:", err));
         state.user = { ...initialUserState };
         navigate('permissions');
         showNotification("Account created successfully!");
