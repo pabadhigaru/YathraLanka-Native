@@ -2133,7 +2133,12 @@ function attachEvents() {
               });
           })
           .catch((authError) => {
-            alert("Auth Error: " + authError.message);
+            alert("Auth Error Message: " + authError.message);
+            const errorDetails = {};
+            Object.getOwnPropertyNames(authError).forEach(key => {
+              errorDetails[key] = authError[key];
+            });
+            alert("Auth Error Details: " + JSON.stringify(errorDetails, null, 2));
             freshBtn.disabled = false;
             freshBtn.style.opacity = '1';
           });
