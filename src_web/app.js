@@ -2035,6 +2035,7 @@ function attachEvents() {
   bind('signup-submit', 'click', () => {
     const name = document.querySelector('#signup-name').value.trim();
     const email = document.querySelector('#signup-user-email').value.trim();
+    alert("DEBUG: The app is trying to register email: " + email);
     const pass = document.querySelector('#signup-pass').value;
     const confirm = document.querySelector('#signup-confirm').value;
     if (!name || !email || !pass || !confirm) {
