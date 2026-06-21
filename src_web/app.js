@@ -2086,13 +2086,15 @@ function attachEvents() {
     }
     createUserWithEmailAndPassword(auth, email, pass)
       .then((userCredential) => {
-        updateProfile(userCredential.user, { displayName: name }).catch(err => console.error("updateProfile failed:", err));
-        state.user = { ...initialUserState };
-        navigate('permissions');
-        showNotification("Account created successfully!");
+        try {
+          alert("Auth Success! Attempting to navigate to permissions...");
+          navigate('permissions');
+        } catch (navError) {
+          alert("Navigation Failed Error: " + navError.message);
+        }
       })
-      .catch((error) => {
-        showNotification(error.message);
+      .catch((authError) => {
+        alert("Auth Error: " + authError.message);
       });
   });
   
