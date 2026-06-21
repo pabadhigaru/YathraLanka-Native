@@ -2112,33 +2112,20 @@ function attachEvents() {
         createUserWithEmailAndPassword(auth, email, pass)
           .then((userCredential) => {
             alert("DEBUG: Auth Success!");
-            try {
-              alert("DEBUG: About to save profile...");
-              state.user = { ...initialUserState };
-              
-              updateProfile(userCredential.user, { displayName: name })
-                .then(() => {
-                  alert("DEBUG: Display name updated successfully!");
-                })
-                .catch(err => {
-                  alert("DEBUG ERROR: Display name update failed: " + err.message);
-                });
-                
-              saveUserProfile()
-                .then(() => {
-                  alert("DEBUG: Firestore profile save success!");
-                })
-                .catch(err => {
-                  alert("DEBUG ERROR: Firestore profile save failed: " + err.message);
-                });
-
-              alert("DEBUG: About to navigate...");
-              navigate('permissions');
-            } catch (err) {
-              alert("DEBUG EXCEPTION: " + err.message);
-              freshBtn.disabled = false;
-              freshBtn.style.opacity = '1';
-            }
+            state.user = { ...initialUserState };
+            
+            updateProfile(userCredential.user, { displayName: name }).catch(err => console.error("updateProfile failed:", err));
+            
+            return saveUserProfile()
+              .then(() => {
+                alert("DEBUG: Firestore profile save success! Navigating...");
+                navigate('permissions');
+              })
+              .catch((err) => {
+                alert("DEBUG EXCEPTION: " + err.message);
+                freshBtn.disabled = false;
+                freshBtn.style.opacity = '1';
+              });
           })
           .catch((authError) => {
             alert("Auth Error: " + authError.message);
