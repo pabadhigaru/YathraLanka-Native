@@ -2099,14 +2099,38 @@ function attachEvents() {
       }
       createUserWithEmailAndPassword(auth, email, pass)
         .then((userCredential) => {
+          console.log("DEBUG YATHRA: Firebase Auth Success for user: " + userCredential.user.uid);
           try {
-            alert("Auth Success! Attempting to navigate to permissions...");
+            console.log("DEBUG YATHRA: Attempting to save profile data...");
+            state.user = { ...initialUserState };
+            
+            updateProfile(userCredential.user, { displayName: name })
+              .then(() => {
+                console.log("DEBUG YATHRA: Display name updated successfully to: " + name);
+              })
+              .catch(err => {
+                console.error("DEBUG YATHRA: Failed to update display name:", err);
+              });
+              
+            saveUserProfile()
+              .then(() => {
+                console.log("DEBUG YATHRA: Initial user profile saved in Firestore.");
+              })
+              .catch(err => {
+                console.error("DEBUG YATHRA: Firestore profile save failed:", err);
+              });
+
+            console.log("DEBUG YATHRA: Attempting navigation to permissions screen...");
             navigate('permissions');
-          } catch (navError) {
-            alert("Navigation Failed Error: " + navError.message);
+          } catch (err) {
+            console.error("DEBUG YATHRA CRASH: ", err);
+            alert("Caught Error: " + err.message);
+            freshBtn.disabled = false;
+            freshBtn.style.opacity = '1';
           }
         })
         .catch((authError) => {
+          console.error("DEBUG YATHRA AUTH ERROR: ", authError);
           alert("Auth Error: " + authError.message);
           freshBtn.disabled = false;
           freshBtn.style.opacity = '1';
