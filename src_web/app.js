@@ -1,7 +1,8 @@
 // YathraLanka App Logic Engine
 import { initialUserState, rankingScale, leaderboardPlayers, sitesData, sideQuestsData, rewardsData } from './data.js';
-import { auth } from './firebase-init.js';
+import { auth, db } from './firebase-init.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 // --- APPLICATION STATE ---
 let state = {
@@ -83,6 +84,33 @@ function addXP(amount, message = '') {
   if (message) {
     showNotification(`${message} (+${amount} XP)`);
   }
+  saveUserProfile();
+}
+
+// Helper to save user profile to Firestore
+function saveUserProfile() {
+  const user = auth.currentUser;
+  if (!user) return Promise.resolve();
+  
+  const userDocRef = doc(db, 'users', user.uid);
+  return setDoc(userDocRef, {
+    xp: state.user.xp,
+    rank: state.user.rank,
+    medals: state.user.medals,
+    sitesVisited: state.user.sitesVisited,
+    quizzesPassed: state.user.quizzesPassed,
+    role: state.user.role,
+    interests: state.user.interests,
+    permissions: state.user.permissions,
+    signedPetitions: state.user.signedPetitions,
+    donatedAmount: state.user.donatedAmount,
+    joinedEvents: state.user.joinedEvents,
+    unlockedCoupons: state.user.unlockedCoupons,
+    completedQuizzes: state.user.completedQuizzes,
+    dwellTimeCompleted: state.user.dwellTimeCompleted,
+    verifiedPhotos: state.user.verifiedPhotos
+  }, { merge: true })
+  .catch(err => console.error("Error saving user profile:", err));
 }
 
 // Simple dynamic banner notification
@@ -2013,10 +2041,21 @@ function attachEvents() {
     }
     signInWithEmailAndPassword(auth, email, pass)
       .then((userCredential) => {
-        state.user = { ...initialUserState };
-        state.user.role = 'Explorer';
-        navigate('dashboard');
-        showNotification("Welcome back, " + (userCredential.user.displayName || "Explorer") + "!");
+        const userDocRef = doc(db, 'users', userCredential.user.uid);
+        return getDoc(userDocRef).then((docSnap) => {
+          state.user = { ...initialUserState };
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            state.user = {
+              ...state.user,
+              ...data
+            };
+          } else {
+            state.user.role = 'Explorer';
+          }
+          navigate('dashboard');
+          showNotification("Welcome back, " + (userCredential.user.displayName || "Explorer") + "!");
+        });
       })
       .catch((error) => {
         showNotification(error.message);
@@ -2068,6 +2107,7 @@ function attachEvents() {
   });
   bind('perm-continue', 'click', () => {
     if (state.user.permissions.camera && state.user.permissions.notifications) {
+      saveUserProfile();
       navigate('choose-role');
     }
   });
@@ -2082,7 +2122,10 @@ function attachEvents() {
     });
   });
   bind('role-continue', 'click', () => {
-    if (state.user.role) navigate('calibrate-compass');
+    if (state.user.role) {
+      saveUserProfile();
+      navigate('calibrate-compass');
+    }
   });
   
   // 6. Calibrate Compass Screen
@@ -2099,12 +2142,16 @@ function attachEvents() {
     });
   });
   bind('compass-continue', 'click', () => {
-    if (state.user.interests.length > 0) navigate('how-scoring-works');
+    if (state.user.interests.length > 0) {
+      saveUserProfile();
+      navigate('how-scoring-works');
+    }
   });
   
   // 7. How Scoring Works
   bind('scoring-continue', 'click', () => {
     // Complete onboarding, save user state
+    saveUserProfile();
     navigate('dashboard');
     showNotification("Onboarding complete! Initial User state initialized.");
   });
