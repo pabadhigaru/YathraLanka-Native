@@ -2099,38 +2099,36 @@ function attachEvents() {
       }
       createUserWithEmailAndPassword(auth, email, pass)
         .then((userCredential) => {
-          console.log("DEBUG YATHRA: Firebase Auth Success for user: " + userCredential.user.uid);
+          alert("DEBUG: Auth Success!");
           try {
-            console.log("DEBUG YATHRA: Attempting to save profile data...");
+            alert("DEBUG: About to save profile...");
             state.user = { ...initialUserState };
             
             updateProfile(userCredential.user, { displayName: name })
               .then(() => {
-                console.log("DEBUG YATHRA: Display name updated successfully to: " + name);
+                alert("DEBUG: Display name updated successfully!");
               })
               .catch(err => {
-                console.error("DEBUG YATHRA: Failed to update display name:", err);
+                alert("DEBUG ERROR: Display name update failed: " + err.message);
               });
               
             saveUserProfile()
               .then(() => {
-                console.log("DEBUG YATHRA: Initial user profile saved in Firestore.");
+                alert("DEBUG: Firestore profile save success!");
               })
               .catch(err => {
-                console.error("DEBUG YATHRA: Firestore profile save failed:", err);
+                alert("DEBUG ERROR: Firestore profile save failed: " + err.message);
               });
 
-            console.log("DEBUG YATHRA: Attempting navigation to permissions screen...");
+            alert("DEBUG: About to navigate...");
             navigate('permissions');
           } catch (err) {
-            console.error("DEBUG YATHRA CRASH: ", err);
-            alert("Caught Error: " + err.message);
+            alert("DEBUG EXCEPTION: " + err.message);
             freshBtn.disabled = false;
             freshBtn.style.opacity = '1';
           }
         })
         .catch((authError) => {
-          console.error("DEBUG YATHRA AUTH ERROR: ", authError);
           alert("Auth Error: " + authError.message);
           freshBtn.disabled = false;
           freshBtn.style.opacity = '1';
