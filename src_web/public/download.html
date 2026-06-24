@@ -74,24 +74,11 @@
   </style>
   <script>
     window.onload = function() {
-      // Configuration: Put your app store links here
-      const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.yathralanka.app";
-      const APP_STORE_URL = "https://apps.apple.com/app/yathralanka/id666666666"; 
-      const FALLBACK_URL = "https://pabadhigaru.github.io/YathraLanka-Native/"; // Web version / landing page
-
-      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-      
-      // Determine destination
-      let destinationUrl = FALLBACK_URL;
-      if (/android/i.test(userAgent)) {
-        destinationUrl = PLAY_STORE_URL;
-      } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-        destinationUrl = APP_STORE_URL;
-      }
+      const WEB_DEMO_URL = "https://pabadhigaru.github.io/YathraLanka-Native/www/index.html"; 
 
       // Perform redirect after 1.5 seconds so the user sees the page
       setTimeout(function() {
-        window.location.replace(destinationUrl);
+        window.location.replace(WEB_DEMO_URL);
       }, 1500);
     };
   </script>
@@ -99,9 +86,9 @@
 <body>
   <div class="card">
     <div class="spinner"></div>
-    <h1>Connecting to App Store...</h1>
-    <p>Detecting your device to download the correct version of YathraLanka.</p>
-    <a href="https://pabadhigaru.github.io/YathraLanka-Native/" class="btn">Go to Web App</a>
+    <h1>Launching YathraLanka...</h1>
+    <p>Detecting your device to launch the interactive web application demo.</p>
+    <a href="https://pabadhigaru.github.io/YathraLanka-Native/www/index.html" class="btn">Launch Web Demo</a>
   </div>
 </body>
 </html>
