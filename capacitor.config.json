@@ -1,5 +1,11 @@
 {
   "appId": "com.yathralanka.app",
   "appName": "YathraLanka",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": true,
+      "style": "DARK"
+    }
+  }
 }

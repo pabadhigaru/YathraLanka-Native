@@ -3,6 +3,8 @@ import { initialUserState, rankingScale, leaderboardPlayers, sitesData, sideQues
 import { auth, db } from './firebase-init.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { GoogleMap } from '@capacitor/google-maps';
+import { Geolocation } from '@capacitor/geolocation';
 
 // --- APPLICATION STATE ---
 let state = {
@@ -51,14 +53,33 @@ function navigate(screenName, storeStack = true) {
     state.navStack.push(state.currentScreen);
   }
   state.currentScreen = screenName;
+  
+  // Clean up map active classes if navigating away from map screen
+  if (screenName !== 'map') {
+    document.documentElement.classList.remove('map-active');
+    document.body.classList.remove('map-active');
+    document.documentElement.style.removeProperty('background');
+    document.documentElement.style.removeProperty('background-color');
+    document.body.style.setProperty('background', '#FDF8E9', 'important');
+    document.body.style.setProperty('background-color', '#FDF8E9', 'important');
+    
+    const targets = ['#app', '.app-root', '#app-container', '.app-viewport', '.iphone-chassis', '.view-wrapper', '.screen', 'main'];
+    targets.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.style.removeProperty('background');
+        el.style.removeProperty('background-color');
+      }
+    });
+  }
+  
   renderActiveScreen();
 }
 
 function goBack() {
   if (state.navStack.length > 0) {
     const prev = state.navStack.pop();
-    state.currentScreen = prev;
-    renderActiveScreen();
+    navigate(prev, false);
   } else {
     navigate('dashboard');
   }
@@ -141,6 +162,226 @@ function showNotification(text) {
     setTimeout(() => notification.remove(), 300);
   }, 2500);
 }
+
+function showLocationPermissionModal() {
+  const existing = document.getElementById('location-permission-modal');
+  if (existing) existing.remove();
+  
+  const modal = document.createElement('div');
+  modal.id = 'location-permission-modal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    z-index: 10000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Outfit', sans-serif;
+  `;
+  
+  modal.innerHTML = `
+    <div class="permission-modal-card" style="
+      background: #FDF8E9;
+      width: 85%;
+      max-width: 320px;
+      border-radius: 24px;
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);
+      border: 1.5px solid var(--color-teal);
+      animation: slideUp 0.3s ease-out;
+    ">
+      <div style="font-size: 40px; margin-bottom: 16px;">📍</div>
+      <h3 style="font-size: 18px; font-weight: 800; color: var(--color-charcoal); margin-bottom: 8px;">Location Services</h3>
+      <p style="font-size: 12px; color: var(--color-charcoal); line-height: 1.5; margin-bottom: 24px; font-weight: 600;">
+        Yathra Lanka requires location access to calculate real-time distances to heritage sites and verify your cultural visits.
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="btn-primary" id="location-allow-btn" style="height: 44px; font-size: 13px;">Allow Access</button>
+        <button class="btn-outline" id="location-cancel-btn" style="height: 44px; font-size: 13px; border: none; color: var(--color-gray);">Not Now</button>
+      </div>
+    </div>
+  `;
+  
+  const chassis = document.querySelector('.iphone-chassis') || document.body;
+  chassis.appendChild(modal);
+  
+  document.getElementById('location-allow-btn').addEventListener('click', async () => {
+    modal.remove();
+    try {
+      const status = await Geolocation.requestPermissions();
+      if (status.location === 'granted') {
+        locationPermissionDenied = false;
+        await initializeYathraMap();
+      } else {
+        locationPermissionDenied = true;
+        await initializeYathraMap();
+      }
+    } catch (err) {
+      locationPermissionDenied = true;
+      console.error("Error requesting geolocation permission:", err);
+      await initializeYathraMap();
+    }
+  });
+  
+  document.getElementById('location-cancel-btn').addEventListener('click', () => {
+    modal.remove();
+    locationPermissionDenied = true;
+    initializeYathraMap();
+  });
+}
+
+let yathraMapInstance = null;
+let userCoordinates = null;
+let locationPermissionDenied = false;
+
+async function initializeYathraMap() {
+  const mapRef = document.getElementById('yathra-main-map');
+  if (!mapRef) return;
+  
+  // Geolocation permission check
+  try {
+    const permStatus = await Geolocation.checkPermissions();
+    if (permStatus.location !== 'granted') {
+      if (!locationPermissionDenied) {
+        showLocationPermissionModal();
+        return;
+      }
+    } else {
+      const coordinates = await Geolocation.getCurrentPosition();
+      userCoordinates = {
+        latitude: coordinates.coords.latitude,
+        longitude: coordinates.coords.longitude
+      };
+      locationPermissionDenied = false;
+    }
+  } catch (err) {
+    locationPermissionDenied = true;
+    console.error("Error checking location permissions:", err);
+  }
+  
+  // Once permission is resolved (either granted or user opted out):
+  // Show loader overlay immediately to mask native build frames
+  const loader = document.getElementById('map-loader');
+  if (loader) {
+    loader.style.setProperty('display', 'flex', 'important');
+  }
+
+  const hideLoader = () => {
+    const loaderEl = document.getElementById('map-loader');
+    if (loaderEl) {
+      loaderEl.style.setProperty('display', 'none', 'important');
+    }
+  };
+
+  // 1. Show the map view component
+  const mapView = document.getElementById('map-view');
+  if (mapView) mapView.style.display = 'block';
+  
+  // 2. Enable map-active styles and transparent backgrounds to reveal native map
+  document.documentElement.classList.add('map-active');
+  document.body.classList.add('map-active');
+  
+  const targets = ['html', 'body', '#app', '.app-root', '#app-container', '.app-viewport', '.iphone-chassis', '.view-wrapper', '.screen', 'main'];
+  targets.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (sel === 'html' || sel === 'body') {
+      const docEl = sel === 'html' ? document.documentElement : document.body;
+      docEl.style.setProperty('background', 'transparent', 'important');
+      docEl.style.setProperty('background-color', 'transparent', 'important');
+    } else if (el) {
+      el.style.setProperty('background', 'none', 'important');
+      el.style.setProperty('background-color', 'transparent', 'important');
+    }
+  });
+  
+  if (yathraMapInstance) {
+    try {
+      await yathraMapInstance.destroy();
+    } catch (e) {
+      console.error("Error destroying stale map:", e);
+    }
+    yathraMapInstance = null;
+  }
+  
+  try {
+    yathraMapInstance = await GoogleMap.create({
+      id: 'yathra-map-instance',
+      element: mapRef,
+      apiKey: 'AIzaSyAh9WMzSPpYwNj-ReY231j_ONHa_73SnUY',
+      config: {
+        center: {
+          lat: 6.9271, // Colombo Latitude
+          lng: 79.8612, // Colombo Longitude
+        },
+        zoom: 13,
+      },
+    });
+    console.log("Google Maps initialized successfully on the glass.");
+
+    // Listen for tiles loaded to hide map loader completely
+    if (typeof yathraMapInstance.setOnTilesLoadedListener === 'function') {
+      yathraMapInstance.setOnTilesLoadedListener(() => {
+        hideLoader();
+      });
+    }
+    // Fallback timeout to ensure loader disappears after 1 second regardless
+    setTimeout(hideLoader, 1000);
+
+    // Loop through sitesData and actively draw markers
+    const mapSites = sitesData.filter(site => site.latitude && site.longitude);
+    const markers = mapSites.map(site => {
+      return {
+        coordinate: {
+          lat: site.latitude,
+          lng: site.longitude
+        },
+        iconUrl: site.category === 'Hidden Gems' ? 'assets/pin_gold.png' : 'assets/pin_teal.png',
+        iconSize: { width: 32, height: 42 }
+      };
+    });
+
+    const addMarkersResult = await yathraMapInstance.addMarkers(markers);
+    const markerIds = Array.isArray(addMarkersResult) ? addMarkersResult : (addMarkersResult.ids || []);
+
+    mapSites.forEach((site, index) => {
+      site.nativeMarkerId = markerIds[index];
+    });
+
+    yathraMapInstance.setOnMarkerClickListener(async (event) => {
+      const siteObj = sitesData.find(s => s.nativeMarkerId === event.markerId);
+      if (siteObj) {
+        showMapPopupCard(siteObj);
+        const popupCard = document.getElementById('map-popup-card');
+        if (popupCard) {
+          popupCard.style.setProperty('display', 'block', 'important');
+        }
+      }
+    });
+
+  } catch (error) {
+    hideLoader();
+    console.error("Maps Initialization Error: ", error);
+  }
+}
+window.initializeYathraMap = initializeYathraMap;
+
+function Maps(route, data) {
+  if (route === 'site-details' || route === 'site-detail') {
+    const siteId = data && data.id;
+    const siteObj = sitesData.find(s => s.id === siteId);
+    if (siteObj) {
+      state.activeSite = siteObj;
+      navigate('site-detail');
+    }
+  }
+}
+window.Maps = Maps;
 
 // --- SCREEN VIEWS & TEMPLATES ---
 function renderActiveScreen() {
@@ -279,6 +520,44 @@ function renderActiveScreen() {
       html = `<div>Screen not found</div>`;
   }
   
+  const mapView = document.getElementById('map-view');
+  
+  if (state.currentScreen !== 'map' && yathraMapInstance) {
+    const tempInstance = yathraMapInstance;
+    yathraMapInstance = null;
+    (async () => {
+      try {
+        await tempInstance.destroy();
+        console.log("Native map instance destroyed successfully.");
+      } catch (err) {
+        console.error("Error destroying map:", err);
+      }
+    })();
+  }
+  
+  if (state.currentScreen === 'map') {
+    container.style.display = 'block';
+    initializeYathraMap();
+  } else {
+    if (mapView) mapView.style.display = 'none';
+    container.style.display = 'block';
+    document.documentElement.classList.remove('map-active');
+    document.body.classList.remove('map-active');
+    document.documentElement.style.removeProperty('background');
+    document.documentElement.style.removeProperty('background-color');
+    document.body.style.setProperty('background', '#FDF8E9', 'important');
+    document.body.style.setProperty('background-color', '#FDF8E9', 'important');
+    
+    const targets = ['#app', '.app-root', '#app-container', '.app-viewport', '.iphone-chassis', '.view-wrapper', '.screen', 'main'];
+    targets.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.style.removeProperty('background');
+        el.style.removeProperty('background-color');
+      }
+    });
+  }
+  
   container.innerHTML = html;
   attachEvents();
 }
@@ -308,7 +587,7 @@ function renderSplash() {
 // 2. Login Screen
 function renderLogin() {
   return `
-    <div class="screen">
+    <div class="screen screen-with-header">
       <div class="header-bar">
         <button class="back-button" id="login-back">←</button>
         <div class="header-title"></div>
@@ -323,15 +602,17 @@ function renderLogin() {
         <div class="form-group">
           <label class="form-label">Email or Phone</label>
           <div class="input-wrapper">
-            <input type="email" class="form-input" placeholder="Enter email or phone" value="traveller@yathralanka.lk" id="login-email">
+            <input type="email" class="form-input" placeholder="Enter email or phone" value="" id="login-email" autocomplete="off">
           </div>
         </div>
         
         <div class="form-group">
           <label class="form-label">Password</label>
           <div class="input-wrapper">
-            <input type="password" class="form-input" placeholder="Enter password" value="password123" id="login-pass">
-            <span class="input-icon-right" id="login-eye">👁️</span>
+            <input type="password" class="form-input" placeholder="Enter password" value="" id="login-pass" autocomplete="off">
+            <div class="input-icon-right" id="login-toggle-password" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: pointer;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
           </div>
         </div>
         
@@ -347,7 +628,11 @@ function renderLogin() {
         
         <div style="display: flex; gap: 16px; justify-content: center;">
           <button style="border: 1px solid #dcdbd8; border-radius: 50%; width: 44px; height: 44px; background: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🌐</button>
-          <button style="border: 1px solid #dcdbd8; border-radius: 50%; width: 44px; height: 44px; background: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🍎</button>
+          <button style="border: 1px solid #dcdbd8; border-radius: 50%; width: 44px; height: 44px; background: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#000000" style="display: inline-block; vertical-align: middle;">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.21.67-2.93 1.49-.62.69-1.16 1.84-1.01 2.96 1.12.09 2.27-.56 2.95-1.39z"/>
+            </svg>
+          </button>
         </div>
         
         <div style="text-align: center; font-size: 12px; margin-top: 14px; font-weight: 500;">
@@ -361,7 +646,7 @@ function renderLogin() {
 // 3. Sign Up Screen
 function renderSignUp() {
   return `
-    <div class="screen">
+    <div class="screen screen-with-header">
       <div class="header-bar">
         <button class="back-button" id="signup-back">←</button>
         <div class="header-title"></div>
@@ -373,6 +658,8 @@ function renderSignUp() {
       </div>
       
       <div class="form-card" style="margin-top: 0; padding: 18px;">
+        <div id="signup-error-box" class="error-warning-box" style="display: none; margin-bottom: 12px;"></div>
+        
         <div class="form-group">
           <label class="form-label">Full Name</label>
           <input type="text" class="form-input" placeholder="Enter your name" id="signup-name" autocomplete="off">
@@ -386,16 +673,20 @@ function renderSignUp() {
         <div class="form-group">
           <label class="form-label">Password</label>
           <div class="input-wrapper">
-            <input type="password" class="form-input" placeholder="Create password" id="signup-pass">
-            <span class="input-icon-right">👁️</span>
+            <input type="password" class="form-input" placeholder="Create password" id="signup-pass" autocomplete="off">
+            <div class="input-icon-right" id="signup-toggle-password" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: pointer;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
           </div>
         </div>
         
         <div class="form-group">
           <label class="form-label">Confirm Password</label>
           <div class="input-wrapper">
-            <input type="password" class="form-input" placeholder="Confirm password" id="signup-confirm">
-            <span class="input-icon-right">👁️</span>
+            <input type="password" class="form-input" placeholder="Confirm password" id="signup-confirm" autocomplete="off">
+            <div class="input-icon-right" id="signup-toggle-confirm" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: pointer;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
           </div>
         </div>
         
@@ -418,17 +709,17 @@ function renderSignUp() {
 function renderPermissions() {
   const isCamera = state.user.permissions.camera;
   const isNotifications = state.user.permissions.notifications;
-  const allGranted = isCamera && isNotifications;
+  const allGranted = isCamera;
   
   return `
-    <div class="screen">
+    <div class="screen permissions-screen" id="permissions-view">
       <div style="padding: 30px 24px 20px 24px; text-align: center;">
         <h2 style="font-size: 26px; font-weight: 900; line-height: 1.2; margin-bottom: 8px;">We need a few permissions</h2>
         <p style="font-size: 13px; color: var(--color-gray);">These help us make your experience safe and seamless.</p>
       </div>
       
       <!-- Camera Card -->
-      <div class="selection-card ${isCamera ? 'selected' : ''}" style="margin: 10px 16px; padding: 14px;" id="perm-camera-btn">
+      <div class="selection-card permission-card ${isCamera ? 'selected' : ''}" style="margin: 10px 16px; padding: 14px;" id="perm-camera-btn">
         <div class="permission-icon-box">
           <img src="icons/camera.png" alt="Camera">
         </div>
@@ -442,7 +733,7 @@ function renderPermissions() {
       </div>
       
       <!-- Notifications Card -->
-      <div class="selection-card ${isNotifications ? 'selected' : ''}" style="margin: 10px 16px; padding: 14px;" id="perm-notif-btn">
+      <div class="selection-card permission-card ${isNotifications ? 'selected' : ''}" style="margin: 10px 16px; padding: 14px;" id="perm-notif-btn">
         <div class="permission-icon-box">
           <img src="icons/notifications.png" alt="Notifications">
         </div>
@@ -456,11 +747,11 @@ function renderPermissions() {
       </div>
       
       <div style="padding: 16px; margin-top: 10px;">
-        <button class="btn-primary" style="opacity: ${allGranted ? '1' : '0.5'}; cursor: ${allGranted ? 'pointer' : 'not-allowed'};" id="perm-continue" ${allGranted ? '' : 'disabled'}>Continue</button>
+        <button class="btn-primary" style="opacity: ${allGranted ? '1' : '0.5'}; cursor: ${allGranted ? 'pointer' : 'not-allowed'};" id="permissions-continue-btn" ${allGranted ? '' : 'disabled'}>Continue</button>
       </div>
       
-      <div class="permission-footer-box">
-        We value your privacy.<br>Location access is only requested momentarily when you verify a site visit.
+      <div class="permission-footer-box" id="permissions-privacy-footer">
+        We value your privacy. Location access is requested when using the map or verifying a site visit.
       </div>
     </div>
   `;
@@ -518,6 +809,9 @@ function renderCalibrateCompass() {
   
   return `
     <div class="screen">
+      <div style="padding: 16px; text-align: left; width: 100%; box-sizing: border-box;">
+        <button id="compass-back-btn" style="color: #000000; background: none; border: none; font-size: 24px; cursor: pointer; padding: 0;">←</button>
+      </div>
       <div style="padding: 30px 24px 10px 24px; text-align: center;">
         <h2 style="font-size: 26px; font-weight: 900; line-height: 1.2; margin-bottom: 6px;">Calibrate Your Compass</h2>
         <p style="font-size: 13px; color: var(--color-gray);">Select your primary interests to personalize your adventure.</p>
@@ -599,13 +893,13 @@ function renderDashboard() {
       </div>
       
       <!-- Wanderer Map Card -->
-      <div class="dashboard-card" style="margin-top: 10px;" id="dash-map-card">
-        <h3 style="font-size: 15px; font-weight: 800;">Wanderer</h3>
-        <p style="font-size: 11px; color: var(--color-gray); margin-top: 2px;">Explore the map to discover nearby Hidden Gems and the Heritage Trail.</p>
-        <div class="dashboard-map-svg">
-          <img src="Element Pictures/SL map on home screen.svg" alt="Sri Lanka Map" style="opacity: 0.85;">
+      <div class="dashboard-card" style="margin-top: 10px; background-color: #AAD3DF !important; background: #AAD3DF !important; transition: none !important; animation: none !important;" id="dash-map-card">
+        <h3 style="font-size: 15px; font-weight: 800; color: var(--color-charcoal); transition: none !important; animation: none !important;">Wanderer</h3>
+        <p style="font-size: 11px; color: #555555; margin-top: 2px; transition: none !important; animation: none !important;">Explore the map to discover nearby Hidden Gems and the Heritage Trail.</p>
+        <div class="dashboard-map-svg" style="transition: none !important; animation: none !important;">
+          <img src="Element Pictures/SL map on home screen green.svg" alt="Sri Lanka Map" style="opacity: 0.85; transition: none !important; animation: none !important;">
         </div>
-        <div style="position: absolute; bottom: 18px; right: 18px; width: 36px; height: 36px; background: var(--color-teal); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; box-shadow: var(--shadow-premium);">
+        <div style="position: absolute; bottom: 18px; right: 18px; width: 36px; height: 36px; background: var(--color-teal); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; box-shadow: var(--shadow-premium); transition: none !important; animation: none !important;">
           →
         </div>
       </div>
@@ -698,7 +992,7 @@ function renderMap() {
   return `
     <div class="screen" style="padding-bottom: 0;">
       <div class="map-canvas">
-        <div class="header-bar" style="position: absolute; top: 0; left: 0; background: transparent; z-index: 100;">
+        <div class="header-bar static-back-arrow-class-name" style="position: absolute; top: 0; left: 0; background: transparent; z-index: 100;">
           <button class="back-button" id="map-back" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal);">←</button>
         </div>
         
@@ -2021,8 +2315,8 @@ function renderBottomNav(activeTab) {
 // --- INTERACTIVE EVENT LISTENERS BINDING ---
 function attachEvents() {
   const bind = (id, event, callback) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener(event, callback);
+    const elements = document.querySelectorAll('#' + id);
+    elements.forEach(el => el.addEventListener(event, callback));
   };
   
   // 1. Splash Screen
@@ -2030,7 +2324,7 @@ function attachEvents() {
   bind('go-signup', 'click', () => navigate('signup'));
   
   // 2. Login Screen
-  bind('login-back', 'click', () => goBack());
+  bind('login-back', 'click', () => navigate('splash'));
   bind('login-toggle-signup', 'click', () => navigate('signup', false));
   bind('login-submit', 'click', () => {
     const email = document.getElementById('login-email').value;
@@ -2061,15 +2355,31 @@ function attachEvents() {
         showNotification(error.message);
       });
   });
-  bind('login-eye', 'click', () => {
-    const input = document.getElementById('login-pass');
-    if (input) {
-      input.type = input.type === 'password' ? 'text' : 'password';
-    }
-  });
+  const eyeOpenSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const eyeClosedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a19.08 19.08 0 0 1 2.18-3M12 5c7 0 10 7 10 7a19.08 19.08 0 0 1-2.18 3M1 1l22 22"/><circle cx="12" cy="12" r="3"/></svg>`;
+  
+  const togglePasswordVisibility = (inputId, toggleId) => {
+    bind(toggleId, 'click', () => {
+      const input = document.getElementById(inputId);
+      const toggle = document.getElementById(toggleId);
+      if (input && toggle) {
+        if (input.type === 'password') {
+          input.type = 'text';
+          toggle.innerHTML = eyeClosedSVG;
+        } else {
+          input.type = 'password';
+          toggle.innerHTML = eyeOpenSVG;
+        }
+      }
+    });
+  };
+  
+  togglePasswordVisibility('login-pass', 'login-toggle-password');
+  togglePasswordVisibility('signup-pass', 'signup-toggle-password');
+  togglePasswordVisibility('signup-confirm', 'signup-toggle-confirm');
   
   // 3. Sign Up Screen
-  bind('signup-back', 'click', () => goBack());
+  bind('signup-back', 'click', () => navigate('splash'));
   bind('signup-toggle-login', 'click', () => navigate('login', false));
   const signupBtn = document.getElementById('signup-submit');
   if (signupBtn) {
@@ -2081,30 +2391,77 @@ function attachEvents() {
       freshBtn.disabled = true;
       freshBtn.style.opacity = '0.5';
       
-      let name, email, pass, confirm;
-      try {
-        name = document.querySelector('#signup-name').value.trim();
-        email = document.querySelector('#signup-user-email').value.trim();
-        pass = document.querySelector('#signup-pass').value;
-        confirm = document.querySelector('#signup-confirm').value;
-      } catch (inputError) {
-        console.error("Sign up input error:", inputError);
+      const nameEl = document.querySelector('#signup-name');
+      const emailEl = document.querySelector('#signup-user-email');
+      const passEl = document.querySelector('#signup-pass');
+      const confirmEl = document.querySelector('#signup-confirm');
+      
+      if (!nameEl || !emailEl || !passEl || !confirmEl) {
+        showNotification("Form elements not found.");
         freshBtn.disabled = false;
         freshBtn.style.opacity = '1';
         return;
       }
-      if (!name || !email || !pass || !confirm) {
-        showNotification("Please fill in all fields.");
+      
+      const name = nameEl.value.trim();
+      const email = emailEl.value.trim();
+      const pass = passEl.value;
+      const confirm = confirmEl.value;
+      
+      const errorBox = document.getElementById('signup-error-box');
+      if (errorBox) {
+        errorBox.style.display = 'none';
+        errorBox.textContent = '';
+      }
+      
+      const showError = (msg) => {
+        if (errorBox) {
+          errorBox.textContent = msg;
+          errorBox.style.display = 'block';
+        } else {
+          showNotification(msg);
+        }
         freshBtn.disabled = false;
         freshBtn.style.opacity = '1';
+      };
+      
+      if (!name || !email || !pass || !confirm) {
+        showError("Please fill in all fields.");
         return;
       }
       if (pass !== confirm) {
-        showNotification("Passwords do not match.");
-        freshBtn.disabled = false;
-        freshBtn.style.opacity = '1';
+        showError("Passwords do not match.");
         return;
       }
+      if (/\s/.test(pass)) {
+        showError("Password must not contain spaces.");
+        return;
+      }
+      if (pass.length < 8) {
+        showError("Password must be at least 8 characters long.");
+        return;
+      }
+      if (!/[a-zA-Z]/.test(pass) || !/[0-9]/.test(pass)) {
+        showError("Password must contain at least one letter and one number.");
+        return;
+      }
+      
+      const checkEl = document.querySelector('#signup-check');
+      if (!checkEl || !checkEl.checked) {
+        showError("You must agree to the Terms & Privacy Policy to proceed.");
+        const checkboxGroup = document.querySelector('.checkbox-group');
+        if (checkboxGroup) {
+          checkboxGroup.style.border = '1px solid var(--color-red-reject)';
+          checkboxGroup.style.borderRadius = '8px';
+          checkboxGroup.style.padding = '4px 8px';
+          setTimeout(() => {
+            checkboxGroup.style.border = '';
+            checkboxGroup.style.padding = '';
+          }, 3000);
+        }
+        return;
+      }
+      
       try {
         const firebasePromise = createUserWithEmailAndPassword(auth, email, pass);
         const timeoutPromise = new Promise((_, reject) => {
@@ -2122,36 +2479,69 @@ function attachEvents() {
                 navigate('permissions');
               })
               .catch((err) => {
-                showNotification("Failed to save profile: " + err.message);
-                freshBtn.disabled = false;
-                freshBtn.style.opacity = '1';
+                showError("Failed to save profile: " + err.message);
               });
           })
           .catch((authError) => {
-            showNotification(authError.message);
+            let cleanMessage = authError.message;
+            if (authError.code === 'auth/email-already-in-use') {
+              cleanMessage = "This email address is already registered.";
+            } else if (authError.code === 'auth/invalid-email') {
+              cleanMessage = "The email address is invalid.";
+            } else if (authError.code === 'auth/weak-password') {
+              cleanMessage = "The password is too weak.";
+            } else if (authError.code === 'auth/operation-not-allowed') {
+              cleanMessage = "Email/Password sign up is disabled.";
+            }
+            showError(cleanMessage);
             console.error("Auth error details:", authError);
-            freshBtn.disabled = false;
-            freshBtn.style.opacity = '1';
           });
       } catch (outerError) {
-        showNotification("An error occurred: " + outerError.message);
-        freshBtn.disabled = false;
-        freshBtn.style.opacity = '1';
+        showError("An error occurred: " + outerError.message);
       }
     });
   }
   
   // 4. Permissions Screen
+  const updateContinueButtonState = () => {
+    const isCamera = state.user.permissions.camera;
+    const continueBtn = document.getElementById('permissions-continue-btn');
+    if (continueBtn) {
+      continueBtn.disabled = !isCamera;
+      continueBtn.style.opacity = isCamera ? '1' : '0.5';
+    }
+  };
+
   bind('perm-camera-btn', 'click', () => {
     state.user.permissions.camera = !state.user.permissions.camera;
-    renderActiveScreen();
+    const card = document.getElementById('perm-camera-btn');
+    if (card) {
+      card.classList.toggle('selected', state.user.permissions.camera);
+      const circle = card.querySelector('.check-circle');
+      if (circle) {
+        circle.classList.toggle('checked', state.user.permissions.camera);
+        circle.innerHTML = state.user.permissions.camera ? '✓' : '';
+      }
+    }
+    updateContinueButtonState();
   });
+
   bind('perm-notif-btn', 'click', () => {
     state.user.permissions.notifications = !state.user.permissions.notifications;
-    renderActiveScreen();
+    const card = document.getElementById('perm-notif-btn');
+    if (card) {
+      card.classList.toggle('selected', state.user.permissions.notifications);
+      const circle = card.querySelector('.check-circle');
+      if (circle) {
+        circle.classList.toggle('checked', state.user.permissions.notifications);
+        circle.innerHTML = state.user.permissions.notifications ? '✓' : '';
+      }
+    }
+    updateContinueButtonState();
   });
-  bind('perm-continue', 'click', () => {
-    if (state.user.permissions.camera && state.user.permissions.notifications) {
+
+  bind('permissions-continue-btn', 'click', () => {
+    if (state.user.permissions.camera) {
       saveUserProfile();
       navigate('choose-role');
     }
@@ -2159,11 +2549,21 @@ function attachEvents() {
   
   // 5. Choose Role Screen
   bind('role-back', 'click', () => goBack());
+  const updateRoleContinueState = () => {
+    const chosen = state.user.role;
+    const btn = document.getElementById('role-continue');
+    if (btn) {
+      btn.disabled = !chosen;
+      btn.style.opacity = chosen ? '1' : '0.5';
+    }
+  };
   const roleCards = document.querySelectorAll('[data-role]');
   roleCards.forEach(c => {
     c.addEventListener('click', () => {
+      roleCards.forEach(card => card.classList.remove('selected'));
+      c.classList.add('selected');
       state.user.role = c.getAttribute('data-role');
-      renderActiveScreen();
+      updateRoleContinueState();
     });
   });
   bind('role-continue', 'click', () => {
@@ -2174,16 +2574,28 @@ function attachEvents() {
   });
   
   // 6. Calibrate Compass Screen
+  bind('compass-back-btn', 'click', () => navigate('choose-role'));
+  const updateCompassContinueState = () => {
+    const active = state.user.interests.length > 0;
+    const btn = document.getElementById('compass-continue');
+    if (btn) {
+      btn.disabled = !active;
+      btn.style.opacity = active ? '1' : '0.5';
+    }
+  };
   const catCards = document.querySelectorAll('[data-cat]');
   catCards.forEach(c => {
     c.addEventListener('click', () => {
       const cat = c.getAttribute('data-cat');
+      let isSelectedNow = false;
       if (state.user.interests.includes(cat)) {
         state.user.interests = state.user.interests.filter(i => i !== cat);
       } else {
         state.user.interests.push(cat);
+        isSelectedNow = true;
       }
-      renderActiveScreen();
+      c.classList.toggle('selected', isSelectedNow);
+      updateCompassContinueState();
     });
   });
   bind('compass-continue', 'click', () => {
@@ -2202,7 +2614,9 @@ function attachEvents() {
   });
   
   // 8. Central Dashboard (Home)
-  bind('dash-map-card', 'click', () => navigate('map'));
+  bind('dash-map-card', 'click', () => {
+    navigate('map');
+  });
   bind('dash-search-card', 'click', () => navigate('directory'));
   bind('dash-view-directory', 'click', (e) => {
     e.stopPropagation();
@@ -2255,7 +2669,27 @@ function attachEvents() {
   }
   
   // 11. Interactive Map Screen
-  bind('map-back', 'click', () => navigate('dashboard'));
+  const mapBackBtn = document.querySelector('#map-back-container button') || document.getElementById('map-back-container');
+  if (mapBackBtn) {
+    mapBackBtn.addEventListener('click', () => {
+      // Clear map active classes and navigate
+      document.body.classList.remove('map-active');
+      document.documentElement.classList.remove('map-active');
+      const mapView = document.getElementById('map-view');
+      if (mapView) mapView.style.display = 'none';
+      
+      const targets = ['#app', '.app-root', '#app-container', '.app-viewport', '.iphone-chassis', '.view-wrapper', '.screen', 'main'];
+      targets.forEach(sel => {
+        const el = document.querySelector(sel);
+        if (el) {
+          el.style.removeProperty('background');
+          el.style.removeProperty('background-color');
+        }
+      });
+      navigate('dashboard');
+    });
+  }
+  
   const pins = document.querySelectorAll('.map-pin');
   pins.forEach(pin => {
     pin.addEventListener('click', (e) => {
@@ -2837,6 +3271,18 @@ function renderTrailListCards(categoryName, searchFilter = '') {
   });
 }
 
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 function showMapPopupCard(site) {
   // Remove existing popups first
   const existing = document.getElementById('map-popup-card');
@@ -2849,12 +3295,26 @@ function showMapPopupCard(site) {
   popup.id = 'map-popup-card';
   popup.className = 'map-popup-card';
   
+  let distanceDisplay = site.distance || '0 km';
+  if (locationPermissionDenied) {
+    distanceDisplay = 'Distance: Permission required';
+  } else if (userCoordinates && site.latitude && site.longitude) {
+    const dist = calculateDistance(
+      userCoordinates.latitude,
+      userCoordinates.longitude,
+      site.latitude,
+      site.longitude
+    );
+    distanceDisplay = dist.toFixed(1) + ' km';
+  }
+  
   popup.innerHTML = `
     <img src="${site.image}" alt="${site.name}" class="popup-site-img">
     <div class="popup-site-info">
       <h3 style="font-size: 15px; font-weight: 800; color: var(--color-charcoal);">${site.name}</h3>
-      <span style="font-size: 10px; color: var(--color-gold); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">${site.category}</span>
-      <span style="font-size: 11px; color: var(--color-charcoal); font-weight: 700; margin-top: 2px;">⭐ ${site.xpRange} • 📍 ${site.distance}</span>
+      <div style="font-size: 11px; color: var(--color-gray); font-weight: 600; margin-top: 1px;">📍 ${site.district}</div>
+      <span style="font-size: 10px; color: var(--color-gold); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; display: inline-block;">${site.category}</span>
+      <span style="font-size: 11px; color: var(--color-charcoal); font-weight: 700; margin-top: 2px;">⭐ ${site.xpRange} • 📍 ${distanceDisplay}</span>
     </div>
     <button class="btn-primary" style="width: 90px; height: 36px; font-size: 11px; padding:0 8px; gap:4px;" id="map-popup-navigate-btn">
       <span>🚀 Navigate</span>
@@ -2863,16 +3323,19 @@ function showMapPopupCard(site) {
   
   container.appendChild(popup);
   
+  const card = document.getElementById('map-popup-card');
+  if (card) { card.style.setProperty('display', 'block', 'important'); }
+  
   // Navigate inside popup trigger
   document.getElementById('map-popup-navigate-btn').addEventListener('click', (e) => {
     e.stopPropagation();
-    state.activeSite = site;
-    navigate('site-detail');
+    const currentSiteId = site.id;
+    Maps('site-details', { id: currentSiteId });
   });
   
   popup.addEventListener('click', (e) => {
     e.stopPropagation();
-    state.activeSite = site;
-    navigate('site-detail');
+    const currentSiteId = site.id;
+    Maps('site-details', { id: currentSiteId });
   });
 }
