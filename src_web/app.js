@@ -2088,7 +2088,7 @@ function attachEvents() {
         pass = document.querySelector('#signup-pass').value;
         confirm = document.querySelector('#signup-confirm').value;
       } catch (inputError) {
-        alert("DEBUG INPUT ERROR: " + inputError.message);
+        console.error("Sign up input error:", inputError);
         freshBtn.disabled = false;
         freshBtn.style.opacity = '1';
         return;
@@ -2106,9 +2106,6 @@ function attachEvents() {
         return;
       }
       try {
-        alert("DEBUG: Auth object type is " + typeof auth);
-        alert("DEBUG: createUserWithEmailAndPassword type is " + typeof createUserWithEmailAndPassword);
-        
         const firebasePromise = createUserWithEmailAndPassword(auth, email, pass);
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error("NETWORK TIMEOUT: Firebase did not respond. navigator.onLine status: " + navigator.onLine)), 15000);
@@ -2116,34 +2113,28 @@ function attachEvents() {
         
         Promise.race([firebasePromise, timeoutPromise])
           .then((userCredential) => {
-            alert("DEBUG: Auth Success!");
             state.user = { ...initialUserState };
             
             updateProfile(userCredential.user, { displayName: name }).catch(err => console.error("updateProfile failed:", err));
             
             return saveUserProfile()
               .then(() => {
-                alert("DEBUG: Firestore profile save success! Navigating...");
                 navigate('permissions');
               })
               .catch((err) => {
-                alert("DEBUG EXCEPTION: " + err.message);
+                showNotification("Failed to save profile: " + err.message);
                 freshBtn.disabled = false;
                 freshBtn.style.opacity = '1';
               });
           })
           .catch((authError) => {
-            alert("Auth Error Message: " + authError.message);
-            const errorDetails = {};
-            Object.getOwnPropertyNames(authError).forEach(key => {
-              errorDetails[key] = authError[key];
-            });
-            alert("Auth Error Details: " + JSON.stringify(errorDetails, null, 2));
+            showNotification(authError.message);
+            console.error("Auth error details:", authError);
             freshBtn.disabled = false;
             freshBtn.style.opacity = '1';
           });
       } catch (outerError) {
-        alert("DEBUG OUTER CRASH: " + outerError.message);
+        showNotification("An error occurred: " + outerError.message);
         freshBtn.disabled = false;
         freshBtn.style.opacity = '1';
       }
