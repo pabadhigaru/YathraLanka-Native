@@ -12,6 +12,7 @@ let state = {
   user: { ...initialUserState },
   activeSite: null,
   activeQuest: null,
+  siteReferrer: 'dashboard',
   
   // Timer States
   dwellTimer: null,
@@ -52,6 +53,15 @@ function navigate(screenName, storeStack = true) {
   if (storeStack && state.currentScreen !== screenName) {
     state.navStack.push(state.currentScreen);
   }
+  
+  // Track where we entered site-detail from
+  if (screenName === 'site-detail') {
+    const mainScreens = ['map', 'directory', 'heritage-trail', 'hidden-gems', 'dashboard'];
+    if (mainScreens.includes(state.currentScreen)) {
+      state.siteReferrer = state.currentScreen;
+    }
+  }
+  
   state.currentScreen = screenName;
   
   // Clean up map active classes if navigating away from map screen
@@ -77,6 +87,11 @@ function navigate(screenName, storeStack = true) {
 }
 
 function goBack() {
+  if (state.currentScreen === 'site-detail') {
+    navigate(state.siteReferrer || 'dashboard', false);
+    return;
+  }
+  
   if (state.navStack.length > 0) {
     const prev = state.navStack.pop();
     navigate(prev, false);
@@ -1057,7 +1072,7 @@ function renderSiteDetail() {
   
   return `
     <div class="screen" style="padding-bottom: 80px;">
-      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 10; width: 100%;">
+      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 10; width: 100%; padding-top: env(safe-area-inset-top, 24px) !important; box-sizing: border-box;">
         <button class="back-button" id="site-back" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal);">←</button>
       </div>
       
@@ -1152,7 +1167,7 @@ function renderCamera() {
   const site = state.activeSite;
   return `
     <div class="screen" style="padding-bottom: 0; background: black; color: white;">
-      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 100;">
+      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 100; padding-top: env(safe-area-inset-top, 24px) !important; box-sizing: border-box; width: 100%;">
         <button class="back-button" id="camera-back" style="background: rgba(0,0,0,0.5); border-radius: 50%; width:32px; height:32px; justify-content:center;">✕</button>
         <div class="header-title">Frame the monument</div>
       </div>
@@ -1711,7 +1726,7 @@ function renderPetitionPage() {
   
   return `
     <div class="screen" style="padding-bottom: 80px;">
-      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 10; width: 100%;">
+      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 10; width: 100%; padding-top: env(safe-area-inset-top, 24px) !important; box-sizing: border-box;">
         <button class="back-button" id="petition-back" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal);">←</button>
       </div>
       
