@@ -13,6 +13,7 @@ let state = {
   activeSite: null,
   activeQuest: null,
   siteReferrer: 'dashboard',
+  activeDirectoryTab: 'Heritage Trail',
   
   // Timer States
   dwellTimer: null,
@@ -947,6 +948,7 @@ function renderDashboard() {
 
 // 9. Search Directory Screen
 function renderDirectory() {
+  const isGems = state.activeDirectoryTab === 'Hidden Gems';
   return `
     <div class="screen">
       <div class="header-bar">
@@ -962,8 +964,8 @@ function renderDirectory() {
       </div>
       
       <div class="tabs-container">
-        <div class="tab-btn active" id="tab-trail">Heritage Trail</div>
-        <div class="tab-btn" id="tab-gems">Hidden Gems</div>
+        <div class="tab-btn ${isGems ? '' : 'active'}" id="tab-trail">Heritage Trail</div>
+        <div class="tab-btn ${isGems ? 'active' : ''}" id="tab-gems">Hidden Gems</div>
       </div>
       
       <!-- Sites Grid Container -->
@@ -2641,11 +2643,13 @@ function attachEvents() {
   // 9. Search Directory
   bind('directory-back', 'click', () => navigate('dashboard'));
   bind('tab-trail', 'click', () => {
+    state.activeDirectoryTab = 'Heritage Trail';
     document.getElementById('tab-trail').classList.add('active');
     document.getElementById('tab-gems').classList.remove('active');
     renderDirectoryGrid('Heritage Trail');
   });
   bind('tab-gems', 'click', () => {
+    state.activeDirectoryTab = 'Hidden Gems';
     document.getElementById('tab-trail').classList.remove('active');
     document.getElementById('tab-gems').classList.add('active');
     renderDirectoryGrid('Hidden Gems');
