@@ -118,7 +118,7 @@ export const sitesData = [
     distance: "160km",
     openStatus: "Open now",
     description: "An ancient rock fortress constructed by King Kashyapa, celebrated for its advanced water gardens, stunning fifth-century frescoes of celestial maidens, and the colossal lion paw gate.",
-    image: "Element Pictures/Sigiriya.jpg",
+    image: "Element Pictures/Sigiriya-LionRock.jpg",
     latitude: 7.9570,
     longitude: 80.7603,
     referenceImage: "Element Pictures/Sigiriya-LionRock.jpg",
