@@ -1,7 +1,18 @@
 // YathraLanka App Logic Engine
 import { initialUserState, rankingScale, leaderboardPlayers, sitesData, sideQuestsData, rewardsData } from './data.js';
 import { auth, db } from './firebase-init.js';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  updateProfile, 
+  signOut,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  sendPasswordResetEmail
+} from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { GoogleMap } from '@capacitor/google-maps';
 import { Geolocation } from '@capacitor/geolocation';
@@ -9,10 +20,20 @@ import { Geolocation } from '@capacitor/geolocation';
 // Import Capacitor Camera for native hardware image capture bindings
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
+// Load cached profile from localStorage for offline resilience if present
+const cachedProfileData = localStorage.getItem('yathra_user_profile');
+let initialCachedUser = { ...initialUserState };
+if (cachedProfileData) {
+  try { initialCachedUser = { ...initialUserState, ...JSON.parse(cachedProfileData) }; } catch(e) {}
+}
+
 // --- APPLICATION STATE ---
 let state = {
   currentScreen: 'splash', // 'splash', 'login', 'signup', 'permissions', 'choose-role', 'calibrate-compass', 'how-scoring-works', 'dashboard', 'directory', 'map', 'site-detail', 'dwell-time', 'camera', 'camera-success', 'camera-reject', 'guidelines', 'offline-sync', 'quiz', 'quiz-cooldown', 'quests', 'quest-social', 'quest-food', 'quest-wandering', 'quest-wildlife', 'quest-warrior', 'activism', 'petition', 'donations', 'cleanup', 'create-event', 'rewards', 'rewards-list', 'coupon-redeem', 'rank', 'leaderboard', 'profile', 'travel-poster', 'settings', 'ledger'
-  user: { ...initialUserState },
+  user: initialCachedUser,
+  isGuest: false,
+  pendingAction: null, // { type: 'VERIFY' | 'LEDGER' | 'REWARD', callback: Function, siteId: string, payload: any }
+  authTab: 'signin',
   activeSite: null,
   activeQuest: null,
   siteReferrer: 'dashboard',
@@ -254,6 +275,7 @@ const DRIFT_GRACE_LIMIT_MS = 180000; // 3 minutes structural grace period
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
+  initAuthListener();
   const queueData = localStorage.getItem('yathra_sync_queue');
   if (queueData) {
     state.offlineSyncQueue = JSON.parse(queueData);
@@ -390,8 +412,14 @@ function addXP(amount, message = '') {
 }
 
 function saveUserProfile() {
+  try {
+    localStorage.setItem('yathra_user_profile', JSON.stringify(state.user));
+  } catch (err) {
+    console.error("Local user profile caching error:", err);
+  }
+
   const user = auth.currentUser;
-  if (!user) return Promise.resolve();
+  if (!user || state.isGuest) return Promise.resolve();
   
   const userDocRef = doc(db, 'users', user.uid);
   return setDoc(userDocRef, {
@@ -411,35 +439,535 @@ function saveUserProfile() {
     dwellTimeCompleted: state.user.dwellTimeCompleted,
     verifiedPhotos: state.user.verifiedPhotos
   }, { merge: true })
-  .catch(err => console.error("Error saving user profile data structure:", err));
+  .catch(err => {
+    if (err && (err.code === 'permission-denied' || err.message?.includes('permission'))) {
+      console.warn("Firestore write permission denied. Profile stored in localStorage only.");
+    } else {
+      console.warn("Firestore save user profile fallback active:", err);
+    }
+  });
 }
 
-function showNotification(text) {
-  const notification = document.createElement('div');
-  notification.style.cssText = `
-    position: absolute;
-    top: 60px;
-    left: 20px;
-    right: 20px;
-    background: var(--color-teal);
-    color: var(--color-white);
-    padding: 12px 18px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 800;
-    box-shadow: var(--shadow-floating);
-    z-index: 2000;
-    text-align: center;
-    border: 1.5px solid var(--color-gold);
-    animation: slideUp 0.3s ease-out forwards;
-  `;
-  notification.textContent = text;
-  document.querySelector('.iphone-chassis').appendChild(notification);
-  
+function showNotification(text, type = 'info') {
+  const existingToasts = document.querySelectorAll('.yathra-toast');
+  existingToasts.forEach(t => t.remove());
+
+  const toast = document.createElement('div');
+  toast.className = `yathra-toast ${type}`;
+  toast.textContent = text;
+
+  const targetContainer = document.querySelector('.iphone-chassis') || document.body;
+  targetContainer.appendChild(toast);
+
   setTimeout(() => {
-    notification.style.animation = 'screenFadeIn 0.3s ease-in reverse forwards';
-    setTimeout(() => notification.remove(), 300);
-  }, 2500);
+    toast.style.animation = 'toastFadeOut 0.3s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 3200);
+}
+
+// --- AUTHENTICATION & SECURITY UTILITIES ---
+function calculatePasswordEntropy(password) {
+  if (!password) return { score: 0, level: 0, label: 'Too Short' };
+  let score = 0;
+  if (password.length >= 8) score += 20;
+  if (password.length >= 10) score += 20;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 20;
+  if (/\d/.test(password)) score += 20;
+  if (/[^a-zA-Z0-9]/.test(password)) score += 20;
+
+  let level = 0;
+  let label = 'Too Short';
+  if (score >= 80) { level = 4; label = 'Strong'; }
+  else if (score >= 60) { level = 3; label = 'Good'; }
+  else if (score >= 40) { level = 2; label = 'Fair'; }
+  else if (score > 0) { level = 1; label = 'Weak'; }
+
+  return { score, level, label };
+}
+
+function translateAuthError(code, defaultMsg) {
+  switch (code) {
+    case 'auth/user-not-found':
+      return "No account found with this email address.";
+    case 'auth/wrong-password':
+      return "Incorrect password. Please try again.";
+    case 'auth/invalid-credential':
+      return "Invalid email or password. Please verify credentials.";
+    case 'auth/email-already-in-use':
+      return "An account with this email address already exists.";
+    case 'auth/weak-password':
+      return "Password is too weak. Please use at least 10 characters with numbers & symbols.";
+    case 'auth/invalid-email':
+      return "Please enter a valid email address.";
+    case 'auth/missing-password':
+      return "Please enter your password.";
+    case 'auth/popup-closed-by-user':
+      return "Sign in window was closed before completing.";
+    case 'auth/popup-blocked':
+      return "Pop-up blocked by browser. Attempting redirect fallback...";
+    case 'auth/network-request-failed':
+      return "Network error. Working in offline cached profile mode.";
+    default:
+      return defaultMsg || "Authentication error occurred. Please try again.";
+  }
+}
+
+function executePendingAction() {
+  if (state.pendingAction) {
+    const action = state.pendingAction;
+    state.pendingAction = null;
+    closeAuthModal();
+    if (typeof action.callback === 'function') {
+      showNotification("Authentication verified! Proceeding with action...", "success");
+      action.callback();
+    }
+  }
+}
+
+function handleAuthUserSuccess(user, toastMsg) {
+  const userDocRef = doc(db, 'users', user.uid);
+  getDoc(userDocRef).then((docSnap) => {
+    state.user = { ...initialUserState };
+    if (docSnap.exists()) {
+      state.user = { ...state.user, ...docSnap.data() };
+    } else {
+      state.user.role = 'Explorer';
+    }
+    state.isGuest = false;
+    saveUserProfile();
+    showNotification(toastMsg || `Welcome back, ${user.displayName || "Explorer"}!`, "success");
+    closeAuthModal();
+    if (state.pendingAction) {
+      executePendingAction();
+    } else if (state.currentScreen === 'login' || state.currentScreen === 'signup' || state.currentScreen === 'splash') {
+      navigate('dashboard');
+    }
+  }).catch(err => {
+    state.isGuest = false;
+    saveUserProfile();
+    showNotification("Logged in (offline profile cached).", "info");
+    closeAuthModal();
+    if (state.pendingAction) executePendingAction();
+    else if (state.currentScreen === 'login' || state.currentScreen === 'signup' || state.currentScreen === 'splash') navigate('dashboard');
+  });
+}
+
+function initAuthListener() {
+  getRedirectResult(auth).then((result) => {
+    if (result && result.user) {
+      state.isGuest = false;
+      handleAuthUserSuccess(result.user, "Google Authentication verified!");
+    }
+  }).catch((err) => {
+    console.warn("Auth redirect result check error:", err);
+  });
+
+  onAuthStateChanged(auth, (user) => {
+    if (user && user.uid) {
+      state.isGuest = false;
+      const userDocRef = doc(db, 'users', user.uid);
+      getDoc(userDocRef).then((docSnap) => {
+        if (docSnap.exists()) {
+          state.user = { ...initialUserState, ...docSnap.data() };
+        } else {
+          state.user.role = state.user.role || 'Explorer';
+        }
+        saveUserProfile();
+        closeAuthModal();
+
+        if (state.pendingAction) {
+          executePendingAction();
+        } else if (state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup') {
+          navigate('dashboard');
+        }
+      }).catch(err => {
+        console.warn("Firestore user fetch offline/permission fallback active:", err);
+        saveUserProfile();
+        closeAuthModal();
+        if (state.pendingAction) executePendingAction();
+        else if (state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup') navigate('dashboard');
+      });
+    } else {
+      if (!state.isGuest) {
+        state.currentScreen = 'splash';
+        renderActiveScreen();
+      }
+    }
+  });
+}
+
+function requireAuth(actionType, callback, siteId = null, payload = null) {
+  if (auth.currentUser || (!state.isGuest && state.user.uid)) {
+    callback();
+  } else {
+    state.pendingAction = { type: actionType, callback, siteId, payload };
+    let msg = "Sign in or Create an Account to proceed.";
+    if (actionType === 'VERIFY') msg = "Sign in required to verify site visits & earn XP on the ledger!";
+    if (actionType === 'LEDGER') msg = "Sign in required to sign heritage petitions & view audit proofs.";
+    if (actionType === 'REWARD') msg = "Sign in required to redeem & unlock heritage rewards.";
+    
+    showNotification(msg, "info");
+    openAuthModal('signin');
+  }
+}
+
+async function handleGoogleSignIn() {
+  try {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ 
+      prompt: 'select_account' 
+    });
+    showNotification("Connecting to Google...", "info");
+
+    const result = await signInWithPopup(auth, provider);
+    if (result && result.user) {
+      state.isGuest = false;
+      handleAuthUserSuccess(result.user, `Welcome, ${result.user.displayName || 'Explorer'}!`);
+    }
+  } catch (error) {
+    console.error('Google Auth Error:', error);
+    if (error.code === 'auth/popup-closed-by-user') {
+      showNotification('Sign-in cancelled by user.', 'info');
+    } else if (error.code === 'auth/popup-blocked') {
+      showNotification('Popup was blocked by browser. Please allow popups.', 'error');
+    } else if (error.code === 'auth/unauthorized-domain') {
+      showNotification('This domain is not authorized in Firebase Console.', 'error');
+    } else {
+      showNotification(error.message || translateAuthError(error.code, error.message), 'error');
+    }
+  }
+}
+
+function renderAuthCard(activeTab = 'signin') {
+  const isSignIn = activeTab === 'signin';
+  const isSignUp = activeTab === 'signup';
+  const isForgot = activeTab === 'forgot';
+
+  const googleSVG = `<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" style="display: inline-block; vertical-align: middle;"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.617z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/><path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>`;
+  const eyeOpenSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+
+  return `
+    <div class="auth-glass-card">
+      <div class="auth-header">
+        <div class="auth-logo-badge">
+          <img src="Element%20Pictures/YathraLanka%20Logo.png" alt="YathraLanka Logo">
+        </div>
+        <h2 class="auth-title">${isForgot ? 'Password Recovery' : (isSignUp ? 'Create Account' : 'Welcome Back')}</h2>
+        <p class="auth-subtitle">${isForgot ? 'Enter your registered email to receive a reset link' : 'Play the game. Protect the Past.'}</p>
+      </div>
+
+      ${!isForgot ? `
+        <div class="auth-segmented-tabs">
+          <button class="auth-tab-btn ${isSignIn ? 'active' : ''}" id="auth-tab-signin" type="button">Sign In</button>
+          <button class="auth-tab-btn ${isSignUp ? 'active' : ''}" id="auth-tab-signup" type="button">Create Account</button>
+        </div>
+
+        <div class="auth-social-group">
+          <button class="btn-google-auth" id="auth-btn-google" type="button">
+            ${googleSVG}
+            <span>Continue with Google</span>
+          </button>
+          <button class="btn-guest-auth" id="auth-btn-guest" type="button">
+            <span style="font-size: 16px;">🧭</span>
+            <span>Continue as Guest / Explorer</span>
+          </button>
+        </div>
+
+        <div class="auth-divider">
+          <span>or email credentials</span>
+        </div>
+      ` : ''}
+
+      <div class="auth-form-card">
+        ${isSignUp ? `
+          <div class="auth-form-group">
+            <label class="auth-form-label">Full Name</label>
+            <div class="auth-input-wrapper">
+              <input type="text" class="auth-input" placeholder="Enter your full name" id="auth-input-name" autocomplete="name">
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="auth-form-group">
+          <label class="auth-form-label">Email Address</label>
+          <div class="auth-input-wrapper">
+            <input type="email" class="auth-input" placeholder="name@domain.com" id="auth-input-email" inputmode="email" autocomplete="email">
+          </div>
+        </div>
+
+        ${!isForgot ? `
+          <div class="auth-form-group">
+            <label class="auth-form-label">Password</label>
+            <div class="auth-input-wrapper">
+              <input type="password" class="auth-input" placeholder="Enter password" id="auth-input-pass" autocomplete="${isSignUp ? 'new-password' : 'current-password'}">
+              <button class="auth-eye-toggle" id="auth-toggle-pass" type="button" aria-label="Toggle password visibility">
+                ${eyeOpenSVG}
+              </button>
+            </div>
+          </div>
+        ` : ''}
+
+        ${isSignUp ? `
+          <div class="entropy-meter-container" id="entropy-meter-box">
+            <div class="entropy-bars">
+              <div class="entropy-bar" id="entropy-bar-1"></div>
+              <div class="entropy-bar" id="entropy-bar-2"></div>
+              <div class="entropy-bar" id="entropy-bar-3"></div>
+              <div class="entropy-bar" id="entropy-bar-4"></div>
+            </div>
+            <div class="entropy-label">
+              <span>Password Security</span>
+              <span id="entropy-status-text">Too Short</span>
+            </div>
+          </div>
+
+          <div class="checkbox-group" style="margin-bottom: 14px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--color-gray);">
+            <input type="checkbox" id="auth-check-terms" checked style="accent-color: var(--color-teal); width: 14px; height: 14px;">
+            <label for="auth-check-terms">I agree to the <span class="form-link">Terms & Privacy Policy</span></label>
+          </div>
+        ` : ''}
+
+        ${isSignIn ? `
+          <div style="text-align: right; margin-top: -4px; margin-bottom: 14px;">
+            <span class="form-link" id="auth-trigger-forgot" style="font-size: 12px; cursor: pointer;">Forgot password?</span>
+          </div>
+        ` : ''}
+
+        <button class="btn-auth-primary" id="auth-submit-btn" type="button">
+          <span id="auth-btn-text">${isForgot ? 'Send Reset Link' : (isSignUp ? 'Create Account' : 'Sign In')}</span>
+          <div class="btn-loading-spinner" id="auth-btn-spinner" style="display: none;"></div>
+        </button>
+
+        ${isForgot ? `
+          <div style="text-align: center; margin-top: 14px;">
+            <span class="form-link" id="auth-back-to-signin" style="font-size: 12px; cursor: pointer;">← Back to Sign In</span>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function openAuthModal(tab = 'signin', pendingAction = null) {
+  if (pendingAction) state.pendingAction = pendingAction;
+  state.authTab = tab;
+  
+  const modalContainer = document.getElementById('auth-modal-container');
+  if (!modalContainer) return;
+  
+  modalContainer.innerHTML = `
+    <div class="auth-modal-backdrop" id="auth-modal-bg">
+      ${renderAuthCard(tab)}
+    </div>
+  `;
+  modalContainer.style.display = 'block';
+  document.body.classList.add('modal-open');
+  
+  attachAuthCardEvents(true);
+}
+
+function closeAuthModal() {
+  const modalContainer = document.getElementById('auth-modal-container');
+  if (modalContainer) {
+    modalContainer.style.display = 'none';
+    modalContainer.innerHTML = '';
+  }
+  document.body.classList.remove('modal-open');
+}
+
+function updatePasswordEntropyUI(passVal) {
+  const entropy = calculatePasswordEntropy(passVal);
+  const statusEl = document.getElementById('entropy-status-text');
+  if (statusEl) statusEl.textContent = entropy.label;
+  
+  for (let i = 1; i <= 4; i++) {
+    const bar = document.getElementById(`entropy-bar-${i}`);
+    if (bar) {
+      bar.className = 'entropy-bar';
+      if (i <= entropy.level) {
+        bar.classList.add('active', `level-${entropy.level}`);
+      }
+    }
+  }
+}
+
+function attachAuthCardEvents(isModal = false) {
+  const eyeOpenSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const eyeClosedSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+  const bind = (id, event, callback) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, callback);
+  };
+
+  bind('auth-tab-signin', 'click', () => {
+    state.authTab = 'signin';
+    if (isModal) openAuthModal('signin'); else navigate('login', false);
+  });
+
+  bind('auth-tab-signup', 'click', () => {
+    state.authTab = 'signup';
+    if (isModal) openAuthModal('signup'); else navigate('signup', false);
+  });
+
+  bind('auth-trigger-forgot', 'click', () => {
+    state.authTab = 'forgot';
+    if (isModal) openAuthModal('forgot'); else {
+      const container = document.getElementById('app-container');
+      if (container) { container.innerHTML = renderAuthCard('forgot'); attachAuthCardEvents(false); }
+    }
+  });
+
+  bind('auth-back-to-signin', 'click', () => {
+    state.authTab = 'signin';
+    if (isModal) openAuthModal('signin'); else navigate('login', false);
+  });
+
+  document.querySelectorAll('.btn-google-auth, #auth-btn-google, #google-signin-btn, #google-signup-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleGoogleSignIn();
+    });
+  });
+
+  bind('auth-btn-guest', 'click', () => {
+    state.isGuest = true;
+    showNotification("Continuing in Guest Explorer Mode.", "info");
+    if (isModal) closeAuthModal();
+    if (state.currentScreen === 'login' || state.currentScreen === 'signup' || state.currentScreen === 'splash') {
+      navigate('dashboard');
+    }
+  });
+
+  bind('auth-toggle-pass', 'click', () => {
+    const passInput = document.getElementById('auth-input-pass');
+    const toggleBtn = document.getElementById('auth-toggle-pass');
+    if (passInput && toggleBtn) {
+      if (passInput.type === 'password') {
+        passInput.type = 'text';
+        toggleBtn.innerHTML = eyeClosedSVG;
+      } else {
+        passInput.type = 'password';
+        toggleBtn.innerHTML = eyeOpenSVG;
+      }
+    }
+  });
+
+  const passInput = document.getElementById('auth-input-pass');
+  if (passInput) {
+    passInput.addEventListener('input', (e) => {
+      updatePasswordEntropyUI(e.target.value);
+    });
+  }
+
+  if (isModal) {
+    const backdrop = document.getElementById('auth-modal-bg');
+    if (backdrop) {
+      backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) closeAuthModal();
+      });
+    }
+  }
+
+  bind('auth-submit-btn', 'click', () => {
+    const activeTab = state.authTab || 'signin';
+    const emailEl = document.getElementById('auth-input-email');
+    const passEl = document.getElementById('auth-input-pass');
+    const nameEl = document.getElementById('auth-input-name');
+    const termsEl = document.getElementById('auth-check-terms');
+    const submitBtn = document.getElementById('auth-submit-btn');
+    const btnSpinner = document.getElementById('auth-btn-spinner');
+
+    const email = emailEl ? emailEl.value.trim() : '';
+    const pass = passEl ? passEl.value : '';
+    const name = nameEl ? nameEl.value.trim() : '';
+
+    if (activeTab === 'forgot') {
+      if (!email) {
+        showNotification("Please enter your registered email address.", "error");
+        return;
+      }
+      if (submitBtn) submitBtn.disabled = true;
+      if (btnSpinner) btnSpinner.style.display = 'block';
+      
+      sendPasswordResetEmail(auth, email)
+        .then(() => {
+          showNotification("Password reset email sent! Check your inbox.", "success");
+          if (isModal) openAuthModal('signin'); else navigate('login');
+        })
+        .catch((err) => {
+          showNotification(translateAuthError(err.code, err.message), "error");
+        })
+        .finally(() => {
+          if (submitBtn) submitBtn.disabled = false;
+          if (btnSpinner) btnSpinner.style.display = 'none';
+        });
+      return;
+    }
+
+    if (activeTab === 'signin') {
+      if (!email || !pass) {
+        showNotification("Please fill in both email and password.", "error");
+        return;
+      }
+      if (submitBtn) submitBtn.disabled = true;
+      if (btnSpinner) btnSpinner.style.display = 'block';
+
+      signInWithEmailAndPassword(auth, email, pass)
+        .then((userCredential) => {
+          handleAuthUserSuccess(userCredential.user, `Welcome back, ${userCredential.user.displayName || "Explorer"}!`);
+        })
+        .catch((err) => {
+          showNotification(translateAuthError(err.code, err.message), "error");
+        })
+        .finally(() => {
+          if (submitBtn) submitBtn.disabled = false;
+          if (btnSpinner) btnSpinner.style.display = 'none';
+        });
+      return;
+    }
+
+    if (activeTab === 'signup') {
+      if (!name || !email || !pass) {
+        showNotification("Please fill in all required fields.", "error");
+        return;
+      }
+      if (pass.length < 10) {
+        showNotification("Security requirement: Password must be at least 10 characters long.", "error");
+        return;
+      }
+      if (termsEl && !termsEl.checked) {
+        showNotification("You must agree to the Terms & Privacy Policy.", "error");
+        return;
+      }
+
+      if (submitBtn) submitBtn.disabled = true;
+      if (btnSpinner) btnSpinner.style.display = 'block';
+
+      createUserWithEmailAndPassword(auth, email, pass)
+        .then((userCredential) => {
+          state.user = { ...initialUserState };
+          updateProfile(userCredential.user, { displayName: name }).catch(console.error);
+          return saveUserProfile().then(() => {
+            showNotification("Account created successfully!", "success");
+            closeAuthModal();
+            if (state.pendingAction) {
+              executePendingAction();
+            } else {
+              navigate('permissions');
+            }
+          });
+        })
+        .catch((err) => {
+          showNotification(translateAuthError(err.code, err.message), "error");
+        })
+        .finally(() => {
+          if (submitBtn) submitBtn.disabled = false;
+          if (btnSpinner) btnSpinner.style.display = 'none';
+        });
+    }
+  });
 }
 
 function showLocationPermissionModal() {
@@ -762,6 +1290,7 @@ function renderSplash() {
         <div class="splash-actions">
           <button class="btn-primary" id="go-signin">Sign In</button>
           <button class="btn-outline" id="go-signup">Sign Up</button>
+          <button class="btn-guest-auth" id="go-guest" style="margin-top: 6px;">Explore as Guest</button>
         </div>
       </div>
     </div>
@@ -769,101 +1298,25 @@ function renderSplash() {
 }
 
 function renderLogin() {
+  state.authTab = 'signin';
   return `
-    <div class="screen screen-with-header">
-      <div class="header-bar">
+    <div class="screen auth-screen-container" id="login-view">
+      <div style="position: absolute; top: 16px; left: 16px; z-index: 10;">
         <button class="back-button" id="login-back">←</button>
-        <div class="header-title"></div>
       </div>
-      <div style="padding: 10px 24px; text-align: center;">
-        <h2 style="font-size: 26px; font-weight: 800; margin-bottom: 6px;">Welcome Back!</h2>
-        <p style="font-size: 13px; color: var(--color-gray); margin-bottom: 20px;">Sign in to continue your journey</p>
-      </div>
-      <div class="form-card">
-        <div class="form-group">
-          <label class="form-label">Email or Phone</label>
-          <div class="input-wrapper">
-            <input type="email" class="form-input" placeholder="Enter email or phone" value="" id="login-email" autocomplete="off">
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <div class="input-wrapper">
-            <input type="password" class="form-input" placeholder="Enter password" value="" id="login-pass" autocomplete="off">
-            <div class="input-icon-right" id="login-toggle-password" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: pointer;">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-            </div>
-          </div>
-        </div>
-        <div style="text-align: right; margin-top: -4px;">
-          <a class="form-link" style="font-size: 12px;">Forgot password?</a>
-        </div>
-        <button class="btn-primary" style="margin-top: 10px;" id="login-submit">Sign In</button>
-        <div style="text-align: center; margin: 10px 0; font-size: 11px; color: var(--color-gray);">or continue with</div>
-        <div style="display: flex; gap: 16px; justify-content: center;">
-          <button style="border: 1px solid #dcdbd8; border-radius: 50%; width: 44px; height: 44px; background: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🌐</button>
-          <button style="border: 1px solid #dcdbd8; border-radius: 50%; width: 44px; height: 44px; background: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#000000" style="display: inline-block; vertical-align: middle;">
-              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.21.67-2.93 1.49-.62.69-1.16 1.84-1.01 2.96 1.12.09 2.27-.56 2.95-1.39z"/>
-            </svg>
-          </button>
-        </div>
-        <div style="text-align: center; font-size: 12px; margin-top: 14px; font-weight: 500;">
-          Don't have an account? <span class="form-link" id="login-toggle-signup">Sign Up</span>
-        </div>
-      </div>
+      ${renderAuthCard('signin')}
     </div>
   `;
 }
 
 function renderSignUp() {
+  state.authTab = 'signup';
   return `
-    <div class="screen screen-with-header">
-      <div class="header-bar">
+    <div class="screen auth-screen-container" id="signup-view">
+      <div style="position: absolute; top: 16px; left: 16px; z-index: 10;">
         <button class="back-button" id="signup-back">←</button>
-        <div class="header-title"></div>
       </div>
-      <div style="padding: 10px 24px; text-align: center;">
-        <h2 style="font-size: 26px; font-weight: 800; margin-bottom: 6px;">Create Account</h2>
-        <p style="font-size: 13px; color: var(--color-gray); margin-bottom: 20px;">Join the movement!</p>
-      </div>
-      <div class="form-card" style="margin-top: 0; padding: 18px;">
-        <div id="signup-error-box" class="error-warning-box" style="display: none; margin-bottom: 12px;"></div>
-        <div class="form-group">
-          <label class="form-label">Full Name</label>
-          <input type="text" class="form-input" placeholder="Enter your name" id="signup-name" autocomplete="off">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input type="email" class="form-input" placeholder="Enter email" id="signup-user-email" autocomplete="off">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <div class="input-wrapper">
-            <input type="password" class="form-input" placeholder="Create password" id="signup-pass" autocomplete="off">
-            <div class="input-icon-right" id="signup-toggle-password" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: pointer;">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-            </div>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Confirm Password</label>
-          <div class="input-wrapper">
-            <input type="password" class="form-input" placeholder="Confirm password" id="signup-confirm" autocomplete="off">
-            <div class="input-icon-right" id="signup-toggle-confirm" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; cursor: pointer;">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-            </div>
-          </div>
-        </div>
-        <div class="checkbox-group">
-          <input type="checkbox" id="signup-check">
-          <label for="signup-check">I agree to the <span class="form-link">Terms & Privacy Policy</span></label>
-        </div>
-        <button class="btn-primary" style="margin-top: 8px;" id="signup-submit">Sign Up</button>
-        <div style="text-align: center; font-size: 12px; margin-top: 12px; font-weight: 500;">
-          Already have an account? <span class="form-link" id="signup-toggle-login">Sign In</span>
-        </div>
-      </div>
+      ${renderAuthCard('signup')}
     </div>
   `;
 }
@@ -1020,18 +1473,39 @@ function renderHowScoring() {
   `;
 }
 
+function renderGuestHeaderBanner() {
+  if (!state.isGuest) return '';
+  return `
+    <div class="guest-header-banner" style="background: linear-gradient(135deg, rgba(46,125,138,0.12) 0%, rgba(235,179,77,0.18) 100%); border: 1.5px solid var(--color-gold); border-radius: 14px; padding: 10px 14px; margin: 6px 16px 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 16px;">🧭</span>
+        <div>
+          <div style="font-size: 12px; font-weight: 800; color: var(--color-dark-teal);">Guest Explorer Mode</div>
+          <div style="font-size: 10px; color: var(--color-gray); font-weight: 600;">Sign in to save progress & redeem rewards</div>
+        </div>
+      </div>
+      <button id="header-guest-login-btn" style="background: linear-gradient(135deg, #EBB34D 0%, #D49B35 100%); color: var(--color-charcoal); border: none; padding: 7px 12px; border-radius: 10px; font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 8px rgba(235, 179, 77, 0.4);">
+        Sign In / Register
+      </button>
+    </div>
+  `;
+}
+
 function renderDashboard() {
   return `
     <div class="screen">
       <div style="padding: 20px 20px 6px 20px; display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h2 style="font-size: 26px; font-weight: 900; line-height: 1.1;">Central Dashboard</h2>
-          <p style="font-size: 12px; color: var(--color-gray); margin-top: 4px;">Welcome back, ${state.user.role || 'Traveller'}!</p>
+          <p style="font-size: 12px; color: var(--color-gray); margin-top: 4px;">Welcome back, ${state.isGuest ? 'Guest Explorer' : (state.user.role || 'Traveller')}!</p>
         </div>
-        <div class="badge-tag" style="background: var(--color-gold); color: var(--color-charcoal); font-weight: 800;">
-          🌟 ${state.user.xp} XP
-        </div>
+        ${state.isGuest ? '' : `
+          <div class="badge-tag" style="background: var(--color-gold); color: var(--color-charcoal); font-weight: 800;">
+            🌟 ${state.user.xp} XP
+          </div>
+        `}
       </div>
+      ${renderGuestHeaderBanner()}
       <div class="dashboard-card" style="margin-top: 10px; background-color: #AAD3DF !important; background: #AAD3DF !important; transition: none !important; animation: none !important;" id="dash-map-card">
         <h3 style="font-size: 15px; font-weight: 800; color: var(--color-charcoal); transition: none !important; animation: none !important;">Wanderer</h3>
         <p style="font-size: 11px; color: #555555; margin-top: 2px; transition: none !important; animation: none !important;">Explore the map to discover nearby Hidden Gems and the Heritage Trail.</p>
@@ -1047,7 +1521,7 @@ function renderDashboard() {
             <p style="font-size: 11px; color: #a9cbd0; margin-top: 2px;">Find specific locations through our categorized directory.</p>
           </div>
         </div>
-        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+        <div class="searcher-tags">
           <span class="badge-tag" style="background: rgba(255,255,255,0.15); color: white;">📍 Heritage Trail</span>
           <span class="badge-tag" style="background: rgba(255,255,255,0.15); color: white;">💎 Hidden Gems</span>
         </div>
@@ -1066,6 +1540,7 @@ function renderDirectory() {
         <button class="back-button" id="directory-back">←</button>
         <div class="header-title">Directory</div>
       </div>
+      ${renderGuestHeaderBanner()}
       <div class="search-container">
         <div class="search-box">
           <span>🔍</span>
@@ -2277,16 +2752,36 @@ function renderProfile() {
   const currentRankName = state.user.xp > 0 ? state.user.rank : 'No Rank';
   return `
     <div class="screen">
-      <div style="padding: 20px 20px 6px 20px;">
+      <div style="padding: 20px 20px 6px 20px; display: flex; justify-content: space-between; align-items: center;">
         <h2 style="font-size: 26px; font-weight: 900;">My Profile</h2>
+        ${state.isGuest ? `
+          <button id="header-guest-login-btn" style="background: linear-gradient(135deg, #EBB34D 0%, #D49B35 100%); color: var(--color-charcoal); border: none; padding: 8px 14px; border-radius: 12px; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(235, 179, 77, 0.4); display: flex; align-items: center; gap: 6px;">
+            <span>🔑</span>
+            <span>Sign In / Register</span>
+          </button>
+        ` : ''}
       </div>
-      <div class="selection-card" style="margin: 10px 16px; padding: 14px;" id="profile-recap-trigger">
-        <img src="icons/profile filled.png" alt="Profile" style="width: 44px; height: 44px; border-radius: 50%; border: 2.5px solid var(--color-teal);">
-        <div style="flex: 1; margin-left: 10px;">
-          <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 2px;">${auth.currentUser ? auth.currentUser.displayName || 'You' : 'You'}</h3>
-          <p style="font-size: 11px; color: var(--color-gray); font-weight: 700;">${currentRankName} • ${state.user.xp} pts</p>
+
+      ${state.isGuest ? `
+        <div class="selection-card" style="margin: 10px 16px; padding: 18px; background: linear-gradient(135deg, rgba(46,125,138,0.1) 0%, rgba(235,179,77,0.15) 100%); border: 1.5px solid var(--color-gold); border-radius: 18px; display: flex; flex-direction: column; gap: 10px; text-align: center; box-shadow: var(--shadow-premium);">
+          <div style="font-size: 32px; margin-bottom: -4px;">🧭</div>
+          <h3 style="font-size: 16px; font-weight: 800; color: var(--color-dark-teal);">Exploring as a Guest</h3>
+          <p style="font-size: 12px; color: var(--color-gray); font-weight: 500; line-height: 1.4;">
+            You are exploring as a Guest. Sign in to save earned badges, claim merchant rewards, and sign public ledgers.
+          </p>
+          <button id="profile-guest-signin-btn" class="btn-auth-primary" style="margin-top: 6px; padding: 11px 18px; font-size: 13px; border-radius: 12px;">
+            Sign In / Create Account
+          </button>
         </div>
-      </div>
+      ` : `
+        <div class="selection-card" style="margin: 10px 16px; padding: 14px;" id="profile-recap-trigger">
+          <img src="icons/profile filled.png" alt="Profile" style="width: 44px; height: 44px; border-radius: 50%; border: 2.5px solid var(--color-teal);">
+          <div style="flex: 1; margin-left: 10px;">
+            <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 2px;">${auth.currentUser ? auth.currentUser.displayName || 'You' : 'You'}</h3>
+            <p style="font-size: 11px; color: var(--color-gray); font-weight: 700;">${currentRankName} • ${state.user.xp} pts</p>
+          </div>
+        </div>
+      `}
       <div style="display: flex; gap: 12px; padding: 0 16px; margin: 12px 0 20px 0;">
         <div style="flex:1; background:var(--color-white); border-radius:12px; padding:12px 8px; text-align:center; box-shadow:var(--shadow-premium);">
           <span style="font-size: 18px; font-weight: 900; color: var(--color-charcoal); display:block;">${state.user.medals}</span>
@@ -2456,118 +2951,24 @@ function attachEvents() {
   
   bind('go-signin', 'click', () => navigate('login'));
   bind('go-signup', 'click', () => navigate('signup'));
+  bind('go-guest', 'click', () => {
+    state.isGuest = true;
+    showNotification("Continuing in Guest Explorer Mode.", "info");
+    navigate('dashboard');
+  });
+  
+  bind('header-guest-login-btn', 'click', () => {
+    openAuthModal('signin');
+  });
+  bind('profile-guest-signin-btn', 'click', () => {
+    openAuthModal('signin');
+  });
   
   bind('login-back', 'click', () => navigate('splash'));
-  bind('login-toggle-signup', 'click', () => navigate('signup', false));
-  bind('login-submit', 'click', () => {
-    const email = document.getElementById('login-email').value;
-    const pass = document.getElementById('login-pass').value;
-    if (!email || !pass) {
-      showNotification("Please fill in all fields.");
-      return;
-    }
-    signInWithEmailAndPassword(auth, email, pass)
-      .then((userCredential) => {
-        const userDocRef = doc(db, 'users', userCredential.user.uid);
-        return getDoc(userDocRef).then((docSnap) => {
-          state.user = { ...initialUserState };
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            state.user = { ...state.user, ...data };
-          } else {
-            state.user.role = 'Explorer';
-          }
-          navigate('dashboard');
-          showNotification("Welcome back, " + (userCredential.user.displayName || "Explorer") + "!");
-        });
-      })
-      .catch((error) => {
-        showNotification(error.message);
-      });
-  });
-
-  const eyeOpenSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
-  const eyeClosedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="eye-icon"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a19.08 19.08 0 0 1 2.18-3M12 5c7 0 10 7 10 7a19.08 19.08 0 0 1-2.18 3M1 1l22 22"/><circle cx="12" cy="12" r="3"/></svg>`;
-  
-  const togglePasswordVisibility = (inputId, toggleId) => {
-    bind(toggleId, 'click', () => {
-      const input = document.getElementById(inputId);
-      const toggle = document.getElementById(toggleId);
-      if (input && toggle) {
-        if (input.type === 'password') {
-          input.type = 'text';
-          toggle.innerHTML = eyeClosedSVG;
-        } else {
-          input.type = 'password';
-          toggle.innerHTML = eyeOpenSVG;
-        }
-      }
-    });
-  };
-  
-  togglePasswordVisibility('login-pass', 'login-toggle-password');
-  togglePasswordVisibility('signup-pass', 'signup-toggle-password');
-  togglePasswordVisibility('signup-confirm', 'signup-toggle-confirm');
-  
   bind('signup-back', 'click', () => navigate('splash'));
-  bind('signup-toggle-login', 'click', () => navigate('login', false));
-  const signupBtn = document.getElementById('signup-submit');
-  if (signupBtn) {
-    const freshBtn = signupBtn.cloneNode(true);
-    signupBtn.parentNode.replaceChild(freshBtn, signupBtn);
-    freshBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      freshBtn.disabled = true;
-      freshBtn.style.opacity = '0.5';
-      
-      const nameEl = document.querySelector('#signup-name');
-      const emailEl = document.querySelector('#signup-user-email');
-      const passEl = document.querySelector('#signup-pass');
-      const confirmEl = document.querySelector('#signup-confirm');
-      
-      if (!nameEl || !emailEl || !passEl || !confirmEl) {
-        showNotification("Form alignment metrics error.");
-        freshBtn.disabled = false; freshBtn.style.opacity = '1'; return;
-      }
-      
-      const name = nameEl.value.trim();
-      const email = emailEl.value.trim();
-      const pass = passEl.value;
-      const confirm = confirmEl.value;
-      
-      const errorBox = document.getElementById('signup-error-box');
-      if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
-      
-      const showError = (msg) => {
-        if (errorBox) { errorBox.textContent = msg; errorBox.style.display = 'block'; } else { showNotification(msg); }
-        freshBtn.disabled = false; freshBtn.style.opacity = '1';
-      };
-      
-      if (!name || !email || !pass || !confirm) { showError("Please fill in all fields."); return; }
-      if (pass !== confirm) { showError("Passwords do not match."); return; }
-      if (pass.length < 10) { showError("World-class security requirement: Password must be at least 10 characters long."); return; }
-      
-      const checkEl = document.querySelector('#signup-check');
-      if (!checkEl || !checkEl.checked) {
-        showError("You must agree to the Terms & Privacy Policy to proceed.");
-        return;
-      }
-      
-      try {
-        createUserWithEmailAndPassword(auth, email, pass)
-          .then((userCredential) => {
-            state.user = { ...initialUserState };
-            updateProfile(userCredential.user, { displayName: name }).catch(err => console.error(err));
-            return saveUserProfile().then(() => { navigate('permissions'); });
-          })
-          .catch((authError) => {
-            showError(authError.message);
-          });
-      } catch (outerError) {
-        showError(outerError.message);
-      }
-    });
+  
+  if (state.currentScreen === 'login' || state.currentScreen === 'signup') {
+    attachAuthCardEvents(false);
   }
   
   const updateContinueButtonState = () => {
@@ -2714,8 +3115,10 @@ function attachEvents() {
   
   // Gate check: Visit Now launches Camera Viewfinder to record photo evidence *first*
   bind('site-visit-now', 'click', () => { 
-    state.hasInitialPhotoCaptured = false; 
-    navigate('camera'); 
+    requireAuth('VERIFY', () => {
+      state.hasInitialPhotoCaptured = false; 
+      navigate('camera');
+    });
   });
   
   bind('site-quiz-btn', 'click', () => {
@@ -2785,30 +3188,32 @@ function attachEvents() {
   
   // Requirement 3: Process matching comparison evaluation commentary at timer completion
   bind('dwell-continue-btn', 'click', () => {
-    if (state.dwellTimeLeft <= 0 && state.hasInitialPhotoCaptured) {
-      clearInterval(backgroundLocationInterval);
-      localStorage.removeItem('yathra_dwell_lock');
-      
-      if (state.gpsVerified && state.dwellImages.length > 0) {
-        // Mock image algorithmic analysis: Verify array contains items and match structural signature
-        state.verificationComment = "Verification Successful: Real-time features closely match the historical structure guidelines!";
+    requireAuth('VERIFY', () => {
+      if (state.dwellTimeLeft <= 0 && state.hasInitialPhotoCaptured) {
+        clearInterval(backgroundLocationInterval);
+        localStorage.removeItem('yathra_dwell_lock');
         
-        state.user.dwellTimeCompleted[state.activeSite.id] = true;
-        state.user.verifiedPhotos[state.activeSite.id] = true;
-        state.user.sitesVisited = Object.keys(state.user.dwellTimeCompleted).length;
-        
-        addXP(50, `Presence verified at ${state.activeSite.name}!`);
-        addXP(10, "Landmark photo verification success!");
-        navigate('camera-success');
-      } else {
-        if (state.dwellImages.length === 0) {
-          state.verificationComment = "Verification Failed: No mid-session tracking images captured. Multiple perspectives required.";
+        if (state.gpsVerified && state.dwellImages.length > 0) {
+          // Mock image algorithmic analysis: Verify array contains items and match structural signature
+          state.verificationComment = "Verification Successful: Real-time features closely match historical structure guidelines!";
+          
+          state.user.dwellTimeCompleted[state.activeSite.id] = true;
+          state.user.verifiedPhotos[state.activeSite.id] = true;
+          state.user.sitesVisited = Object.keys(state.user.dwellTimeCompleted).length;
+          
+          addXP(50, `Presence verified at ${state.activeSite.name}!`);
+          addXP(10, "Landmark photo verification success!");
+          navigate('camera-success');
         } else {
-          state.verificationComment = "Verification Failed: Spatial structure profiles do not correlate with registered landmark geometry.";
+          if (state.dwellImages.length === 0) {
+            state.verificationComment = "Verification Failed: No mid-session tracking images captured. Multiple perspectives required.";
+          } else {
+            state.verificationComment = "Verification Failed: Spatial structure profiles do not correlate with registered landmark geometry.";
+          }
+          navigate('camera-reject');
         }
-        navigate('camera-reject');
       }
-    }
+    });
   });
   
   bind('camera-back', 'click', () => goBack());
@@ -3036,12 +3441,14 @@ function attachEvents() {
   
   bind('petition-back', 'click', () => goBack());
   bind('petition-submit', 'click', () => {
-    if (!state.petitionSigned) {
-      state.petitionSigned = true; state.petitionSignatures++;
-      state.user.signedPetitions.push('ritigala-forest');
-      addXP(3, "You signed the Ritigala Protection Petition!");
-      renderActiveScreen();
-    }
+    requireAuth('LEDGER', () => {
+      if (!state.petitionSigned) {
+        state.petitionSigned = true; state.petitionSignatures++;
+        state.user.signedPetitions.push('ritigala-forest');
+        addXP(3, "You signed the Ritigala Protection Petition!");
+        renderActiveScreen();
+      }
+    });
   });
   
   bind('donations-back', 'click', () => goBack());
@@ -3090,14 +3497,24 @@ function attachEvents() {
   bind('rew-coupon-use', 'click', () => navigate('coupon-redeem'));
   
   bind('rew-unlock-guide', 'click', () => {
-    if (state.user.xp >= 100) { state.user.xp -= 100; state.user.unlockedCoupons.push('guide'); showNotification("Unlocked Ancient Trail Guide Coupon!"); navigate('rewards-list'); }
+    requireAuth('REWARD', () => {
+      if (state.user.xp >= 100) { state.user.xp -= 100; state.user.unlockedCoupons.push('guide'); showNotification("Unlocked Ancient Trail Guide Coupon!", "success"); navigate('rewards-list'); }
+      else { showNotification("Requires 100 XP to unlock voucher.", "error"); }
+    });
   });
   bind('rew-unlock-crafts', 'click', () => {
-    if (state.user.xp >= 100) { state.user.xp -= 100; state.user.unlockedCoupons.push('crafts'); showNotification("Unlocked Artisan Crafts Coupon!"); navigate('rewards-list'); }
+    requireAuth('REWARD', () => {
+      if (state.user.xp >= 100) { state.user.xp -= 100; state.user.unlockedCoupons.push('crafts'); showNotification("Unlocked Artisan Crafts Coupon!", "success"); navigate('rewards-list'); }
+      else { showNotification("Requires 100 XP to unlock voucher.", "error"); }
+    });
   });
   
   bind('coupon-back', 'click', () => goBack());
-  bind('coupon-redeem-btn', 'click', () => { showNotification("Voucher code validated by merchant partner interface configuration."); });
+  bind('coupon-redeem-btn', 'click', () => {
+    requireAuth('REWARD', () => {
+      showNotification("Voucher code validated by merchant partner interface configuration.", "success");
+    });
+  });
   bind('coupon-review-submit', 'click', () => {
     const rev = document.getElementById('coupon-review-input').value;
     if (rev) { addXP(10, "Partner node critique saved."); document.getElementById('coupon-review-input').value = ''; }
