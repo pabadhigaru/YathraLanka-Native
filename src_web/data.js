@@ -528,8 +528,8 @@ export const sitesData = [
     openStatus: "Open now",
     description: "An ancient forest cave sanctuary close to Colombo, famous for housing 99 drip-ledged caves, historic murals, wooden bridge over natural water flows, and pre-historic rock formations.",
     image: "Element Pictures/Pilikuttuwa Temple.jpg",
-    latitude: 7.0709,
-    longitude: 80.0384,
+    latitude: 6.846583,
+    longitude: 79.993333,
     referenceImage: "Element Pictures/Pilikuttuwa Temple.jpg",
     quizzes: [
       {

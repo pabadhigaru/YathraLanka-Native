@@ -2,6 +2,9 @@
   "appId": "com.yathralanka.app",
   "appName": "YathraLanka",
   "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
   "plugins": {
     "StatusBar": {
       "overlaysWebView": true,
