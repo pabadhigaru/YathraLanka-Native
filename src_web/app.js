@@ -1533,26 +1533,50 @@ function renderDashboard() {
 }
 
 function renderDirectory() {
-  const isGems = state.activeDirectoryTab === 'Hidden Gems';
+  const isGems = state.activeDirectoryTab === 'Hidden Gems' || state.activeDirectoryTab === 'gems';
   return `
-    <div class="screen">
-      <div class="header-bar">
-        <button class="back-button" id="directory-back">←</button>
-        <div class="header-title">Directory</div>
-      </div>
-      ${renderGuestHeaderBanner()}
-      <div class="search-container">
-        <div class="search-box">
-          <span>🔍</span>
-          <input type="text" class="search-input" placeholder="Search by name of the location" id="directory-search">
+    <div id="directory-view" class="screen directory-view-wrapper">
+      <!-- 1. Header is in normal flow -->
+      <div class="directory-top-bar">
+        <div class="header-bar">
+          <button class="back-button" id="directory-back-btn">←</button>
+          <h1 class="header-title">Directory</h1>
+        </div>
+        <div id="directory-guest-banner-wrapper">
+          ${renderGuestHeaderBanner()}
+        </div>
+        <div class="search-container">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="directory-search-input" class="search-input" placeholder="Search by name of location...">
+          </div>
+        </div>
+        <div class="tabs-wrapper">
+          <div class="segmented-control" role="tablist">
+            <button class="segmented-tab ${!isGems ? 'active' : ''}" 
+                    id="tab-heritage" 
+                    role="tab" 
+                    aria-selected="${!isGems}">
+              Heritage Trail
+            </button>
+            <button class="segmented-tab ${isGems ? 'active' : ''}" 
+                    id="tab-hidden-gems" 
+                    role="tab" 
+                    aria-selected="${isGems}">
+              Hidden Gems
+            </button>
+          </div>
         </div>
       </div>
-      <div class="tabs-container">
-        <div class="tab-btn ${isGems ? '' : 'active'}" id="tab-trail">Heritage Trail</div>
-        <div class="tab-btn ${isGems ? 'active' : ''}" id="tab-gems">Hidden Gems</div>
+
+      <!-- 2. Scrollable Cards Container strictly below the header -->
+      <div class="directory-cards-scroller">
+        <div class="locations-grid" id="directory-grid-target">
+          <!-- Dynamic 2-column cards render here -->
+        </div>
       </div>
-      <div class="tabs-divider-line" style="height: 1px; background: var(--color-light-gray); margin: 0 16px 12px 16px;"></div>
-      <div class="locations-grid" id="directory-grid-container"></div>
+
+      <!-- 3. Fixed Bottom Navigation Bar -->
       ${renderBottomNav('home')}
     </div>
   `;
@@ -3053,20 +3077,32 @@ function attachEvents() {
   bind('dash-view-directory', 'click', (e) => { e.stopPropagation(); navigate('directory'); });
   
   bind('directory-back', 'click', () => navigate('dashboard'));
-  bind('tab-trail', 'click', () => {
+  bind('directory-back-btn', 'click', () => navigate('dashboard'));
+
+  const switchTrail = () => {
     state.activeDirectoryTab = 'Heritage Trail';
-    document.getElementById('tab-trail').classList.add('active');
-    document.getElementById('tab-gems').classList.remove('active');
+    const tTrail = document.getElementById('tab-trail') || document.getElementById('tab-heritage');
+    const tGems = document.getElementById('tab-gems') || document.getElementById('tab-hidden-gems');
+    if (tTrail) { tTrail.classList.add('active'); tTrail.setAttribute('aria-selected', 'true'); }
+    if (tGems) { tGems.classList.remove('active'); tGems.setAttribute('aria-selected', 'false'); }
     renderDirectoryGrid('Heritage Trail');
-  });
-  bind('tab-gems', 'click', () => {
+  };
+
+  const switchGems = () => {
     state.activeDirectoryTab = 'Hidden Gems';
-    document.getElementById('tab-trail').classList.remove('active');
-    document.getElementById('tab-gems').classList.add('active');
+    const tTrail = document.getElementById('tab-trail') || document.getElementById('tab-heritage');
+    const tGems = document.getElementById('tab-gems') || document.getElementById('tab-hidden-gems');
+    if (tTrail) { tTrail.classList.remove('active'); tTrail.setAttribute('aria-selected', 'false'); }
+    if (tGems) { tGems.classList.add('active'); tGems.setAttribute('aria-selected', 'true'); }
     renderDirectoryGrid('Hidden Gems');
-  });
+  };
+
+  bind('tab-trail', 'click', switchTrail);
+  bind('tab-heritage', 'click', switchTrail);
+  bind('tab-gems', 'click', switchGems);
+  bind('tab-hidden-gems', 'click', switchGems);
   
-  const dirSearch = document.getElementById('directory-search');
+  const dirSearch = document.getElementById('directory-search') || document.getElementById('directory-search-input');
   if (dirSearch) {
     dirSearch.addEventListener('input', () => {
       const activeTab = state.activeDirectoryTab;
@@ -3757,8 +3793,22 @@ function updateCooldownDisplay() {
   circle.style.strokeDashoffset = 565.48 - (state.cooldownTimeLeft / 300) * 565.48;
 }
 
+function adjustDirectoryCardOffset() {
+  const header = document.querySelector('#directory-view .directory-top-bar') ||
+                 document.querySelector('#directory-view .directory-static-header-zone') || 
+                 document.querySelector('#directory-view header');
+  const scrollBody = document.querySelector('#directory-view .directory-cards-scroller') ||
+                     document.querySelector('#directory-view .directory-scrollable-cards-zone') || 
+                     document.querySelector('#directory-view main') ||
+                     document.querySelector('#directory-grid-target')?.parentElement;
+
+  if (header && scrollBody) {
+    scrollBody.style.setProperty('margin-top', '0px', 'important');
+  }
+}
+
 function renderDirectoryGrid(categoryFilter, searchFilter = '') {
-  const grid = document.getElementById('directory-grid-container');
+  const grid = document.getElementById('directory-grid-target') || document.getElementById('directory-grid-container');
   if (!grid) return;
   
   const query = searchFilter.toLowerCase();
@@ -3766,25 +3816,29 @@ function renderDirectoryGrid(categoryFilter, searchFilter = '') {
   
   if (filtered.length === 0) {
     grid.innerHTML = `<div style="grid-column: 1/3; text-align: center; color: var(--color-gray); padding: 20px; font-size:12px;">No locations found matching parameters criteria</div>`;
-    return;
-  }
-  
-  grid.innerHTML = filtered.map(s => `
-    <div class="location-grid-card" data-site-grid-id="${s.id}">
-      <img src="${s.image}" alt="${s.name}" class="location-grid-card-img">
-      <div class="location-card-content">
-        <h4 class="location-card-title">${s.name}</h4>
-        <span class="location-card-sub">${s.district}</span>
-        <span class="location-card-xp">${s.xpRange}</span>
+  } else {
+    grid.innerHTML = filtered.map(s => `
+      <div class="location-grid-card" data-site-grid-id="${s.id}">
+        <img src="${s.image}" alt="${s.name}" class="location-grid-card-img">
+        <div class="location-card-content">
+          <h4 class="location-card-title">${s.name}</h4>
+          <span class="location-card-sub">${s.district}</span>
+          <span class="location-card-xp">${s.xpRange}</span>
+        </div>
       </div>
-    </div>
-  `).join('');
-  
-  document.querySelectorAll('[data-site-grid-id]').forEach(card => {
-    card.addEventListener('click', () => {
-      state.activeSite = sitesData.find(s => s.id === card.getAttribute('data-site-grid-id'));
-      navigate('site-detail');
+    `).join('');
+    
+    document.querySelectorAll('[data-site-grid-id]').forEach(card => {
+      card.addEventListener('click', () => {
+        state.activeSite = sitesData.find(s => s.id === card.getAttribute('data-site-grid-id'));
+        navigate('site-detail');
+      });
     });
+  }
+
+  requestAnimationFrame(() => {
+    adjustDirectoryCardOffset();
+    setTimeout(adjustDirectoryCardOffset, 50);
   });
 }
 
