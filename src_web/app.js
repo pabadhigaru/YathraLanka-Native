@@ -346,6 +346,56 @@ function navigate(screenName, storeStack = true) {
     state.navStack.push(state.currentScreen);
   }
   
+  // Auth Guard for Guests attempting to access restricted screens (Site Details, Featured Missions, Activism)
+  const isGuestUser = state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser;
+  if (isGuestUser) {
+    if (screenName === 'site-detail') {
+      const targetId = state.activeSite ? state.activeSite.id : null;
+      showAuthRequiredModal({
+        title: "Unlock Site Details",
+        message: "Sign in or create an account to explore comprehensive history, view high-res photo archives, and unlock interactive site guides.",
+        redirectView: "site-detail",
+        targetId: targetId
+      });
+      return;
+    }
+    const gatedMissionScreens = ['quests', 'quest-social', 'quest-food', 'quest-wandering', 'quest-wildlife', 'quest-warrior'];
+    if (gatedMissionScreens.includes(screenName)) {
+      showAuthRequiredModal({
+        title: "Unlock Featured Missions",
+        message: "Sign in or create an account to participate in Featured Missions & Side Quests, complete challenges, and earn XP.",
+        redirectView: screenName
+      });
+      return;
+    }
+    if (screenName === 'petition') {
+      showAuthRequiredModal({
+        title: "Sign the Petition",
+        message: "Sign in or register to add your verified signature to heritage conservation petitions.",
+        redirectView: "petition",
+        targetId: "ritigala-forest"
+      });
+      return;
+    }
+    if (screenName === 'cleanup') {
+      showAuthRequiredModal({
+        title: "Join Volunteer Cleanup",
+        message: "Please sign in to register for upcoming site preservation and cleanup events.",
+        redirectView: "cleanup",
+        targetId: "site-cleanup"
+      });
+      return;
+    }
+    if (screenName === 'create-event') {
+      showAuthRequiredModal({
+        title: "Host a Community Event",
+        message: "You must be signed in to organize and publish new community heritage initiatives.",
+        redirectView: "create-event"
+      });
+      return;
+    }
+  }
+
   if (screenName === 'site-detail') {
     const mainScreens = ['map', 'directory', 'heritage-trail', 'hidden-gems', 'dashboard'];
     if (mainScreens.includes(state.currentScreen)) {
@@ -775,6 +825,161 @@ function closeAuthModal() {
   document.body.classList.remove('modal-open');
 }
 
+function showAuthRequiredModal(options = {}) {
+  const title = options.title || "Unlock Site Details";
+  const message = options.message || "Sign in or create an account to explore comprehensive history, view high-res photo archives, and unlock interactive site guides.";
+  const redirectView = options.redirectView || "site-detail";
+  const targetId = options.targetId || null;
+
+  let container = document.getElementById('auth-modal-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'auth-modal-container';
+    document.body.appendChild(container);
+  }
+
+  const siteObj = targetId ? sitesData.find(s => s.id === targetId) : null;
+  const siteName = siteObj ? siteObj.name : null;
+
+  state.pendingAction = {
+    type: redirectView === 'site-detail' ? 'SITE_DETAIL' : 'NAVIGATION',
+    siteId: targetId,
+    redirectView: redirectView,
+    callback: () => {
+      if (targetId) {
+        state.activeSite = sitesData.find(s => s.id === targetId);
+      }
+      if (redirectView) {
+        navigate(redirectView);
+      }
+    }
+  };
+
+  container.innerHTML = `
+    <div class="auth-modal-backdrop" id="auth-required-modal-bg">
+      <div class="auth-required-card glass-panel">
+        <div class="auth-required-icon">🔒</div>
+        <h3 class="auth-required-title">${title}</h3>
+        ${siteName ? `<div class="auth-required-badge">📍 ${siteName}</div>` : ''}
+        <p class="auth-required-message">${message}</p>
+        <div class="auth-required-btn-group">
+          <button id="auth-req-login-btn" class="btn-primary auth-required-btn-login">
+            Sign In / Register
+          </button>
+          <button id="auth-req-cancel-btn" class="auth-required-btn-cancel">
+            Explore Later
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.style.display = 'block';
+  document.body.classList.add('modal-open');
+
+  const bg = document.getElementById('auth-required-modal-bg');
+  if (bg) {
+    bg.addEventListener('click', (e) => {
+      if (e.target === bg) closeAuthRequiredModal();
+    });
+  }
+
+  const loginBtn = document.getElementById('auth-req-login-btn');
+  if (loginBtn) {
+    loginBtn.addEventListener('click', () => {
+      closeAuthRequiredModal();
+      openAuthModal('signin');
+    });
+  }
+
+  const cancelBtn = document.getElementById('auth-req-cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      closeAuthRequiredModal();
+    });
+  }
+}
+
+function closeAuthRequiredModal() {
+  const container = document.getElementById('auth-modal-container');
+  if (container) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+  }
+  document.body.classList.remove('modal-open');
+}
+
+function handleSiteCardClick(siteId) {
+  if (!siteId) return;
+  const siteObj = sitesData.find(s => s.id === siteId);
+  if (siteObj) {
+    state.activeSite = siteObj;
+  }
+
+  if (state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser) {
+    showAuthRequiredModal({
+      title: "Unlock Site Details",
+      message: "Sign in or create an account to explore comprehensive history, view high-res photo archives, and unlock interactive site guides.",
+      redirectView: "site-detail",
+      targetId: siteId
+    });
+    return;
+  }
+
+  navigate('site-detail');
+}
+
+function handleImpactAction(actionType, actionPayload = {}) {
+  const isGuest = state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser;
+
+  switch (actionType) {
+    case 'donation':
+      navigate('donations');
+      break;
+
+    case 'sign-petition':
+      if (isGuest) {
+        showAuthRequiredModal({
+          title: "Sign the Petition",
+          message: "Sign in or register to add your verified signature to heritage conservation petitions.",
+          redirectView: "petition",
+          targetId: actionPayload.petitionId || 'ritigala-forest'
+        });
+        return;
+      }
+      navigate('petition');
+      break;
+
+    case 'join-cleanup':
+      if (isGuest) {
+        showAuthRequiredModal({
+          title: "Join Volunteer Cleanup",
+          message: "Please sign in to register for upcoming site preservation and cleanup events.",
+          redirectView: "cleanup",
+          targetId: actionPayload.eventId || 'site-cleanup'
+        });
+        return;
+      }
+      navigate('cleanup');
+      break;
+
+    case 'create-event':
+      if (isGuest) {
+        showAuthRequiredModal({
+          title: "Host a Community Event",
+          message: "You must be signed in to organize and publish new community heritage initiatives.",
+          redirectView: "create-event"
+        });
+        return;
+      }
+      navigate('create-event');
+      break;
+
+    default:
+      console.warn(`Unhandled impact action: ${actionType}`);
+  }
+}
+
 function updatePasswordEntropyUI(passVal) {
   const entropy = calculatePasswordEntropy(passVal);
   const statusEl = document.getElementById('entropy-status-text');
@@ -1173,10 +1378,8 @@ window.initializeYathraMap = initializeYathraMap;
 function Maps(route, data) {
   if (route === 'site-details' || route === 'site-detail') {
     const siteId = data && data.id;
-    const siteObj = sitesData.find(s => s.id === siteId);
-    if (siteObj) {
-      state.activeSite = siteObj;
-      navigate('site-detail');
+    if (siteId) {
+      handleSiteCardClick(siteId);
     }
   }
 }
@@ -2402,11 +2605,12 @@ function renderQuestWarrior() {
 }
 
 function renderActivismDashboard() {
+  const isGuest = state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser;
   const cards = [
-    { key: 'petition', title: 'Sign Petitions', desc: 'Support important causes', xp: '3xp', color: '#1A4D54' },
-    { key: 'donations', title: 'Donations', desc: 'Help restore and protect', xp: '5-15xp', color: 'var(--color-gold)' },
-    { key: 'cleanup', title: 'Join Cleanups', desc: 'Participate in environmental cleanups', xp: '15xp', color: '#4E8A63' },
-    { key: 'create-event', title: 'Create Community Event', desc: 'Participate in environmental cleanups', xp: '15xp', color: '#2E7D8A' }
+    { key: 'petition', title: 'Sign Petitions', desc: 'Support important causes', xp: '3xp', color: '#1A4D54', gated: true },
+    { key: 'donations', title: 'Donations', desc: 'Help restore and protect', xp: '5-15xp', color: 'var(--color-gold)', gated: false },
+    { key: 'cleanup', title: 'Join Cleanups', desc: 'Participate in environmental cleanups', xp: '15xp', color: '#4E8A63', gated: true },
+    { key: 'create-event', title: 'Create Community Event', desc: 'Participate in environmental cleanups', xp: '15xp', color: '#2E7D8A', gated: true }
   ];
   return `
     <div class="screen" style="padding-bottom: 80px;">
@@ -2416,12 +2620,18 @@ function renderActivismDashboard() {
       </div>
       <div style="display: flex; flex-direction: column; gap: 14px; padding: 10px 16px;">
         ${cards.map(c => `
-          <div class="activism-card-link" style="background: ${c.color};" id="act-link-${c.key}">
+          <div class="activism-card-link" style="background: ${c.color}; position: relative;" id="act-link-${c.key}">
             <div>
-              <h3 style="font-size: 15px; font-weight: 800;">${c.title}</h3>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <h3 style="font-size: 15px; font-weight: 800;">${c.title}</h3>
+                ${isGuest && c.gated ? `<span style="font-size: 12px; opacity: 0.9;" title="Sign in required">🔒</span>` : ''}
+              </div>
               <p style="font-size: 11px; opacity: 0.8; margin-top: 2px;">${c.desc}</p>
             </div>
-            <span style="font-size: 10px; font-weight: 700; opacity: 0.9; text-transform: uppercase;">${c.xp}</span>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+              <span style="font-size: 10px; font-weight: 700; opacity: 0.9; text-transform: uppercase;">${c.xp}</span>
+              ${isGuest && c.gated ? `<span style="font-size: 8px; font-weight: 800; background: rgba(0,0,0,0.25); padding: 2px 6px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Sign In Required</span>` : ''}
+            </div>
           </div>
         `).join('')}
       </div>
@@ -3470,21 +3680,28 @@ function attachEvents() {
   bind('quest-warrior-back', 'click', () => goBack());
   bind('quest-warrior-snap', 'click', () => { addXP(75, "Heritage reforestation contribution verified."); navigate('quests'); });
   
-  bind('act-link-petition', 'click', () => navigate('petition'));
-  bind('act-link-donations', 'click', () => navigate('donations'));
-  bind('act-link-cleanup', 'click', () => navigate('cleanup'));
-  bind('act-link-create-event', 'click', () => navigate('create-event'));
+  bind('act-link-petition', 'click', () => handleImpactAction('sign-petition', { petitionId: 'ritigala-forest' }));
+  bind('act-link-donations', 'click', () => handleImpactAction('donation'));
+  bind('act-link-cleanup', 'click', () => handleImpactAction('join-cleanup', { eventId: 'site-cleanup' }));
+  bind('act-link-create-event', 'click', () => handleImpactAction('create-event'));
   
   bind('petition-back', 'click', () => goBack());
   bind('petition-submit', 'click', () => {
-    requireAuth('LEDGER', () => {
-      if (!state.petitionSigned) {
-        state.petitionSigned = true; state.petitionSignatures++;
-        state.user.signedPetitions.push('ritigala-forest');
-        addXP(3, "You signed the Ritigala Protection Petition!");
-        renderActiveScreen();
-      }
-    });
+    if (state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser) {
+      showAuthRequiredModal({
+        title: "Sign the Petition",
+        message: "Sign in or register to add your verified signature to heritage conservation petitions.",
+        redirectView: "petition",
+        targetId: "ritigala-forest"
+      });
+      return;
+    }
+    if (!state.petitionSigned) {
+      state.petitionSigned = true; state.petitionSignatures++;
+      state.user.signedPetitions.push('ritigala-forest');
+      addXP(3, "You signed the Ritigala Protection Petition!");
+      renderActiveScreen();
+    }
   });
   
   bind('donations-back', 'click', () => goBack());
@@ -3512,6 +3729,15 @@ function attachEvents() {
   
   bind('cleanup-back', 'click', () => goBack());
   bind('cleanup-join', 'click', () => {
+    if (state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser) {
+      showAuthRequiredModal({
+        title: "Join Volunteer Cleanup",
+        message: "Please sign in to register for upcoming site preservation and cleanup events.",
+        redirectView: "cleanup",
+        targetId: "site-cleanup"
+      });
+      return;
+    }
     if (!state.user.joinedEvents.includes('site-cleanup')) {
       state.user.joinedEvents.push('site-cleanup');
       addXP(15, "Registered for Elahera Anicut site cleanup!");
@@ -3521,6 +3747,14 @@ function attachEvents() {
   
   bind('create-event-back', 'click', () => goBack());
   bind('event-submit', 'click', () => {
+    if (state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser) {
+      showAuthRequiredModal({
+        title: "Host a Community Event",
+        message: "You must be signed in to organize and publish new community heritage initiatives.",
+        redirectView: "create-event"
+      });
+      return;
+    }
     const loc = document.getElementById('event-location').value;
     const type = document.getElementById('event-type').value;
     if (loc) { state.user.joinedEvents.push('community-event'); addXP(15, `Created Community event: ${type}!`); navigate('activism'); }
@@ -3830,8 +4064,8 @@ function renderDirectoryGrid(categoryFilter, searchFilter = '') {
     
     document.querySelectorAll('[data-site-grid-id]').forEach(card => {
       card.addEventListener('click', () => {
-        state.activeSite = sitesData.find(s => s.id === card.getAttribute('data-site-grid-id'));
-        navigate('site-detail');
+        const siteId = card.getAttribute('data-site-grid-id');
+        handleSiteCardClick(siteId);
       });
     });
   }
@@ -3867,8 +4101,8 @@ function renderTrailListCards(categoryName, searchFilter = '') {
   
   document.querySelectorAll('[data-site-list-id]').forEach(card => {
     card.addEventListener('click', () => {
-      state.activeSite = sitesData.find(s => s.id === card.getAttribute('data-site-list-id'));
-      navigate('site-detail');
+      const siteId = card.getAttribute('data-site-list-id');
+      handleSiteCardClick(siteId);
     });
   });
 }
@@ -3909,9 +4143,11 @@ function showMapPopupCard(site) {
   container.appendChild(popup);
   
   document.getElementById('map-popup-navigate-btn').addEventListener('click', (e) => {
-    e.stopPropagation(); Maps('site-details', { id: site.id });
+    e.stopPropagation();
+    handleSiteCardClick(site.id);
   });
   popup.addEventListener('click', (e) => {
-    e.stopPropagation(); Maps('site-details', { id: site.id });
+    e.stopPropagation();
+    handleSiteCardClick(site.id);
   });
 }

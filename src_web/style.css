@@ -2570,4 +2570,102 @@ body.modal-open {
 @keyframes toastFadeOut {
   from { opacity: 1; transform: translate(-50%, 0); }
   to { opacity: 0; transform: translate(-50%, -20px); }
-}
+}
+
+/* --- AUTH REQUIRED MODAL STYLES --- */
+.auth-required-card {
+  max-width: 360px;
+  width: 90%;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 24px;
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+  border: 1.5px solid rgba(235, 179, 77, 0.5);
+  animation: authFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.auth-required-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px auto;
+  background: linear-gradient(135deg, rgba(46, 125, 138, 0.15) 0%, rgba(235, 179, 77, 0.25) 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  border: 1.5px solid var(--color-gold);
+  box-shadow: 0 6px 16px rgba(235, 179, 77, 0.25);
+}
+
+.auth-required-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--color-charcoal);
+  margin-bottom: 8px;
+  font-family: 'Cabinet Grotesk', var(--font-body), sans-serif;
+  letter-spacing: -0.3px;
+}
+
+.auth-required-badge {
+  display: inline-block;
+  background: rgba(46, 125, 138, 0.12);
+  color: var(--color-dark-teal);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(46, 125, 138, 0.2);
+}
+
+.auth-required-message {
+  font-size: 13px;
+  color: var(--color-gray);
+  line-height: 1.55;
+  margin-bottom: 24px;
+  font-weight: 500;
+}
+
+.auth-required-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-required-btn-login {
+  background: linear-gradient(135deg, #2E7D8A 0%, #1A4D56 100%);
+  color: white;
+  height: 44px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 4px 14px rgba(46, 125, 138, 0.35);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-required-btn-login:active {
+  transform: scale(0.98);
+}
+
+.auth-required-btn-cancel {
+  background: transparent;
+  color: var(--color-gray);
+  height: 38px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1.5px solid var(--color-light-gray);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.auth-required-btn-cancel:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
