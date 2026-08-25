@@ -2668,4 +2668,30 @@ body.modal-open {
 .auth-required-btn-cancel:hover {
   background: rgba(0, 0, 0, 0.03);
 }
+
+/* Leaflet Fallback Map & Placeholder Box Styles */
+body.map-active .leaflet-container,
+body.map-active #yathra-main-map .leaflet-container,
+body.map-active #map-container .leaflet-container {
+  pointer-events: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 10 !important;
+}
+
+.map-placeholder-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: #FDF8E9;
+  color: var(--color-charcoal);
+  gap: 16px;
+  font-family: 'Outfit', sans-serif;
+  text-align: center;
+  padding: 20px;
+}
+
 

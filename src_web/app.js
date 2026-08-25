@@ -29,7 +29,8 @@ if (cachedProfileData) {
 
 // --- APPLICATION STATE ---
 let state = {
-  currentScreen: 'splash', // 'splash', 'login', 'signup', 'permissions', 'choose-role', 'calibrate-compass', 'how-scoring-works', 'dashboard', 'directory', 'map', 'site-detail', 'dwell-time', 'camera', 'camera-success', 'camera-reject', 'guidelines', 'offline-sync', 'quiz', 'quiz-cooldown', 'quests', 'quest-social', 'quest-food', 'quest-wandering', 'quest-wildlife', 'quest-warrior', 'activism', 'petition', 'donations', 'cleanup', 'create-event', 'rewards', 'rewards-list', 'coupon-redeem', 'rank', 'leaderboard', 'profile', 'travel-poster', 'settings', 'ledger'
+  currentScreen: 'landing',
+  currentUser: null, // 'splash', 'login', 'signup', 'permissions', 'choose-role', 'calibrate-compass', 'how-scoring-works', 'dashboard', 'directory', 'map', 'site-detail', 'dwell-time', 'camera', 'camera-success', 'camera-reject', 'guidelines', 'offline-sync', 'quiz', 'quiz-cooldown', 'quests', 'quest-social', 'quest-food', 'quest-wandering', 'quest-wildlife', 'quest-warrior', 'activism', 'petition', 'donations', 'cleanup', 'create-event', 'rewards', 'rewards-list', 'coupon-redeem', 'rank', 'leaderboard', 'profile', 'travel-poster', 'settings', 'ledger'
   user: initialCachedUser,
   isGuest: false,
   pendingAction: null, // { type: 'VERIFY' | 'LEDGER' | 'REWARD', callback: Function, siteId: string, payload: any }
@@ -273,6 +274,30 @@ const GEOFENCE_RADIUS_METERS = 500;
 const POLLING_INTERVAL_MS = 120000; // 2 minutes interval polling
 const DRIFT_GRACE_LIMIT_MS = 180000; // 3 minutes structural grace period
 
+// Ensure default entry strictly renders the Landing Screen
+function initApp() {
+  // Check if active authenticated session exists (excluding guest session)
+  const savedUser = localStorage.getItem('yathra_current_user');
+  
+  if (savedUser) {
+    try {
+      state.currentUser = JSON.parse(savedUser);
+      state.user = state.currentUser;
+      state.isGuest = false;
+      navigate('dashboard');
+      return;
+    } catch (e) {
+      console.error("Error parsing saved user session:", e);
+      localStorage.removeItem('yathra_current_user');
+    }
+  }
+
+  // Reset guest state and stay on Landing Screen
+  state.currentUser = null;
+  state.isGuest = false;
+  navigate('landing'); // Never auto-navigate to dashboard
+}
+
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
   initAuthListener();
@@ -318,11 +343,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  navigate('splash');
+  initApp();
 });
+window.initApp = initApp;
 
 // --- STATE MANAGER / ROUTER ---
 function navigate(screenName, storeStack = true) {
+  if (screenName === 'splash') screenName = 'landing';
   const lockData = localStorage.getItem('yathra_dwell_lock');
   if (lockData) {
     try {
@@ -463,7 +490,11 @@ function addXP(amount, message = '') {
 
 function saveUserProfile() {
   try {
+    state.currentUser = state.user;
     localStorage.setItem('yathra_user_profile', JSON.stringify(state.user));
+    if (state.user && !state.isGuest && state.user.uid) {
+      localStorage.setItem('yathra_current_user', JSON.stringify(state.user));
+    }
   } catch (err) {
     console.error("Local user profile caching error:", err);
   }
@@ -583,22 +614,28 @@ function handleAuthUserSuccess(user, toastMsg) {
     } else {
       state.user.role = 'Explorer';
     }
+    state.user.uid = user.uid;
+    state.currentUser = state.user;
     state.isGuest = false;
+    localStorage.setItem('yathra_current_user', JSON.stringify(state.user));
     saveUserProfile();
     showNotification(toastMsg || `Welcome back, ${user.displayName || "Explorer"}!`, "success");
     closeAuthModal();
     if (state.pendingAction) {
       executePendingAction();
-    } else if (state.currentScreen === 'login' || state.currentScreen === 'signup' || state.currentScreen === 'splash') {
+    } else if (state.currentScreen === 'landing' || state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup') {
       navigate('dashboard');
     }
   }).catch(err => {
+    state.user.uid = user.uid;
+    state.currentUser = state.user;
     state.isGuest = false;
+    localStorage.setItem('yathra_current_user', JSON.stringify(state.user));
     saveUserProfile();
     showNotification("Logged in (offline profile cached).", "info");
     closeAuthModal();
     if (state.pendingAction) executePendingAction();
-    else if (state.currentScreen === 'login' || state.currentScreen === 'signup' || state.currentScreen === 'splash') navigate('dashboard');
+    else if (state.currentScreen === 'landing' || state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup') navigate('dashboard');
   });
 }
 
@@ -622,24 +659,31 @@ function initAuthListener() {
         } else {
           state.user.role = state.user.role || 'Explorer';
         }
+        state.user.uid = user.uid;
+        state.currentUser = state.user;
+        const hasSavedUser = !!localStorage.getItem('yathra_current_user');
         saveUserProfile();
         closeAuthModal();
 
         if (state.pendingAction) {
           executePendingAction();
-        } else if (state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup') {
+        } else if (hasSavedUser && (state.currentScreen === 'landing' || state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup')) {
           navigate('dashboard');
         }
       }).catch(err => {
         console.warn("Firestore user fetch offline/permission fallback active:", err);
+        state.user.uid = user.uid;
+        state.currentUser = state.user;
+        const hasSavedUser = !!localStorage.getItem('yathra_current_user');
         saveUserProfile();
         closeAuthModal();
         if (state.pendingAction) executePendingAction();
-        else if (state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup') navigate('dashboard');
+        else if (hasSavedUser && (state.currentScreen === 'landing' || state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup')) navigate('dashboard');
       });
     } else {
-      if (!state.isGuest) {
-        state.currentScreen = 'splash';
+      if (!state.isGuest && !localStorage.getItem('yathra_current_user')) {
+        state.currentUser = null;
+        state.currentScreen = 'landing';
         renderActiveScreen();
       }
     }
@@ -1252,9 +1296,131 @@ let yathraMapInstance = null;
 let userCoordinates = null;
 let locationPermissionDenied = false;
 
+// --- MAP INITIALIZATION & LEAFLET FALLBACK ENGINE ---
+function renderMapMarkers(map, type = 'google') {
+  const mapSites = sitesData.filter(site => site.latitude && site.longitude);
+  
+  if (type === 'leaflet' && typeof L !== 'undefined') {
+    mapSites.forEach(site => {
+      const isGold = site.category === 'Hidden Gems';
+      const markerHtml = `
+        <div style="
+          width: 22px;
+          height: 22px;
+          background: ${isGold ? '#EBB34D' : '#0C6C7A'};
+          border: 2px solid #ffffff;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+          cursor: pointer;
+        "></div>
+      `;
+      const customIcon = L.divIcon({
+        className: 'custom-leaflet-marker',
+        html: markerHtml,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+      });
+
+      const marker = L.marker([site.latitude, site.longitude], { icon: customIcon }).addTo(map);
+      marker.on('click', () => {
+        showMapPopupCard(site);
+        const popupCard = document.getElementById('map-popup-card');
+        if (popupCard) {
+          popupCard.style.setProperty('display', 'block', 'important');
+        }
+      });
+    });
+  } else if (type === 'google' && typeof google !== 'undefined' && google.maps) {
+    mapSites.forEach(site => {
+      const marker = new google.maps.Marker({
+        position: { lat: site.latitude, lng: site.longitude },
+        map: map,
+        title: site.name
+      });
+      marker.addListener('click', () => {
+        showMapPopupCard(site);
+        const popupCard = document.getElementById('map-popup-card');
+        if (popupCard) {
+          popupCard.style.setProperty('display', 'block', 'important');
+        }
+      });
+    });
+  }
+}
+
+function renderFallbackLeafletMap(containerId = 'map-container', coords = [7.8731, 80.7718]) {
+  const mapContainer = document.getElementById(containerId) || document.getElementById('yathra-main-map') || document.getElementById('map-view');
+  if (!mapContainer) return;
+  
+  // Clear any Google Maps error banners or previous elements
+  mapContainer.innerHTML = '';
+
+  const targetId = mapContainer.id || containerId;
+
+  if (typeof L !== 'undefined') {
+    if (mapContainer._leaflet_id) {
+      mapContainer._leaflet_id = null;
+    }
+    const map = L.map(targetId).setView(coords, 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    renderMapMarkers(map, 'leaflet');
+  } else {
+    mapContainer.innerHTML = `
+      <div class="map-placeholder-box">
+        <p>🗺️ Interactive Map Mode</p>
+        <button class="btn-primary" onclick="window.open('https://www.google.com/maps', '_blank')">Open in External Maps</button>
+      </div>
+    `;
+  }
+}
+
+function initMap(containerId = 'map-container', defaultCoords = [7.8731, 80.7718]) {
+  const mapElement = document.getElementById(containerId) || document.getElementById('yathra-main-map');
+  if (!mapElement) return;
+
+  // Catch Google Maps API auth failures
+  window.gm_authFailure = function() {
+    console.warn("Google Maps API auth failure. Falling back to OpenStreetMap / Leaflet...");
+    renderFallbackLeafletMap(containerId, defaultCoords);
+  };
+
+  // If Google Maps is unavailable or unconfigured, initialize Leaflet directly
+  if (typeof google === 'undefined' || !google.maps || !google.maps.Map) {
+    renderFallbackLeafletMap(containerId, defaultCoords);
+    return;
+  }
+
+  try {
+    const map = new google.maps.Map(mapElement, {
+      center: { lat: defaultCoords[0], lng: defaultCoords[1] },
+      zoom: 8,
+      disableDefaultUI: false,
+    });
+    renderMapMarkers(map, 'google');
+  } catch (err) {
+    console.error("Failed to render Google Map:", err);
+    renderFallbackLeafletMap(containerId, defaultCoords);
+  }
+}
+
+window.gm_authFailure = function() {
+  console.warn("Google Maps API auth failure. Falling back to OpenStreetMap / Leaflet...");
+  renderFallbackLeafletMap('yathra-main-map', [7.8731, 80.7718]);
+};
+
+window.initMap = initMap;
+window.renderFallbackLeafletMap = renderFallbackLeafletMap;
+window.renderMapMarkers = renderMapMarkers;
+
 async function initializeYathraMap() {
   const mapRef = document.getElementById('yathra-main-map');
   if (!mapRef) return;
+
+  const defaultCoords = userCoordinates 
+    ? [userCoordinates.latitude, userCoordinates.longitude] 
+    : [7.8731, 80.7718];
   
   try {
     const permStatus = await Geolocation.checkPermissions();
@@ -1306,71 +1472,60 @@ async function initializeYathraMap() {
       el.style.setProperty('background-color', 'transparent', 'important');
     }
   });
-  
-  if (yathraMapInstance) {
-    try {
-      await yathraMapInstance.destroy();
-    } catch (e) {
-      console.error("Error processing stale native map termination mapping:", e);
-    }
-    yathraMapInstance = null;
-  }
-  
+
   try {
-    yathraMapInstance = await GoogleMap.create({
-      id: 'yathra-map-instance',
-      element: mapRef,
-      apiKey: 'AIzaSyAh9WMzSPpYwNj-ReY231j_ONHa_73SnUY',
-      config: {
-        center: {
-          lat: 6.9271,
-          lng: 79.8612,
+    if (typeof GoogleMap !== 'undefined' && GoogleMap.create && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+      if (yathraMapInstance) {
+        try { await yathraMapInstance.destroy(); } catch (e) {}
+        yathraMapInstance = null;
+      }
+      yathraMapInstance = await GoogleMap.create({
+        id: 'yathra-map-instance',
+        element: mapRef,
+        apiKey: 'AIzaSyAh9WMzSPpYwNj-ReY231j_ONHa_73SnUY',
+        config: {
+          center: { lat: defaultCoords[0], lng: defaultCoords[1] },
+          zoom: 8,
         },
-        zoom: 13,
-      },
-    });
-    console.log("Google Maps framework overlay injected over chassis.");
-
-    if (typeof yathraMapInstance.setOnTilesLoadedListener === 'function') {
-      yathraMapInstance.setOnTilesLoadedListener(() => {
-        hideLoader();
       });
-    }
-    setTimeout(hideLoader, 1000);
 
-    const mapSites = sitesData.filter(site => site.latitude && site.longitude);
-    const markers = mapSites.map(site => {
-      return {
-        coordinate: {
-          lat: site.latitude,
-          lng: site.longitude
-        },
+      if (typeof yathraMapInstance.setOnTilesLoadedListener === 'function') {
+        yathraMapInstance.setOnTilesLoadedListener(() => hideLoader());
+      }
+      setTimeout(hideLoader, 1000);
+
+      const mapSites = sitesData.filter(site => site.latitude && site.longitude);
+      const markers = mapSites.map(site => ({
+        coordinate: { lat: site.latitude, lng: site.longitude },
         iconUrl: site.category === 'Hidden Gems' ? 'assets/pin_gold.png' : 'assets/pin_teal.png',
         iconSize: { width: 32, height: 42 }
-      };
-    });
+      }));
 
-    const addMarkersResult = await yathraMapInstance.addMarkers(markers);
-    const markerIds = Array.isArray(addMarkersResult) ? addMarkersResult : (addMarkersResult.ids || []);
+      const addMarkersResult = await yathraMapInstance.addMarkers(markers);
+      const markerIds = Array.isArray(addMarkersResult) ? addMarkersResult : (addMarkersResult.ids || []);
 
-    mapSites.forEach((site, index) => {
-      site.nativeMarkerId = markerIds[index];
-    });
+      mapSites.forEach((site, index) => {
+        site.nativeMarkerId = markerIds[index];
+      });
 
-    yathraMapInstance.setOnMarkerClickListener(async (event) => {
-      const siteObj = sitesData.find(s => s.nativeMarkerId === event.markerId);
-      if (siteObj) {
-        showMapPopupCard(siteObj);
-        const popupCard = document.getElementById('map-popup-card');
-        if (popupCard) {
-          popupCard.style.setProperty('display', 'block', 'important');
+      yathraMapInstance.setOnMarkerClickListener(async (event) => {
+        const siteObj = sitesData.find(s => s.nativeMarkerId === event.markerId);
+        if (siteObj) {
+          showMapPopupCard(siteObj);
+          const popupCard = document.getElementById('map-popup-card');
+          if (popupCard) {
+            popupCard.style.setProperty('display', 'block', 'important');
+          }
         }
-      }
-    });
-
+      });
+    } else {
+      initMap('yathra-main-map', defaultCoords);
+      setTimeout(hideLoader, 400);
+    }
   } catch (error) {
-    hideLoader();
-    console.error("Maps Initialization Error: ", error);
+    console.warn("Native GoogleMap creation failed, falling back to initMap/Leaflet:", error);
+    initMap('yathra-main-map', defaultCoords);
+    setTimeout(hideLoader, 400);
   }
 }
 window.initializeYathraMap = initializeYathraMap;
@@ -1393,7 +1548,7 @@ function renderActiveScreen() {
   let html = '';
   
   switch (state.currentScreen) {
-    case 'splash': html = renderSplash(); break;
+    case 'landing': case 'splash': html = renderLanding(); break;
     case 'login': html = renderLogin(); break;
     case 'signup': html = renderSignUp(); break;
     case 'permissions': html = renderPermissions(); break;
@@ -1481,9 +1636,9 @@ function renderActiveScreen() {
 
 // --- CORE SCREENS GENERATION ---
 
-function renderSplash() {
+function renderLanding() {
   return `
-    <div class="screen dark-theme">
+    <div class="screen dark-theme" id="landing-view">
       <div class="splash-container">
         <div class="splash-logo-box">
           <img src="Element%20Pictures/YathraLanka%20Logo.png" alt="YathraLanka Logo">
@@ -1491,13 +1646,17 @@ function renderSplash() {
         <h1 class="splash-title">YathraLanka</h1>
         <p class="splash-subtitle">Play the game. Protect the Past.</p>
         <div class="splash-actions">
-          <button class="btn-primary" id="go-signin">Sign In</button>
-          <button class="btn-outline" id="go-signup">Sign Up</button>
-          <button class="btn-guest-auth" id="go-guest" style="margin-top: 6px;">Explore as Guest</button>
+          <button class="btn-primary" id="btn-login">Sign In</button>
+          <button class="btn-outline" id="btn-signup">Sign Up</button>
+          <button class="btn-guest-auth" id="btn-guest-explore" style="margin-top: 6px;">Explore as Guest</button>
         </div>
       </div>
     </div>
   `;
+}
+
+function renderSplash() {
+  return renderLanding();
 }
 
 function renderLogin() {
@@ -3183,10 +3342,20 @@ function attachEvents() {
     elements.forEach(el => el.addEventListener(event, callback));
   };
   
+  bind('btn-login', 'click', () => navigate('login'));
   bind('go-signin', 'click', () => navigate('login'));
+  bind('btn-signup', 'click', () => navigate('signup'));
+  bind('btn-register', 'click', () => navigate('signup'));
   bind('go-signup', 'click', () => navigate('signup'));
+  bind('btn-guest-explore', 'click', () => {
+    state.isGuest = true;
+    state.currentUser = null;
+    showNotification("Continuing in Guest Explorer Mode.", "info");
+    navigate('dashboard');
+  });
   bind('go-guest', 'click', () => {
     state.isGuest = true;
+    state.currentUser = null;
     showNotification("Continuing in Guest Explorer Mode.", "info");
     navigate('dashboard');
   });
@@ -3803,10 +3972,12 @@ function attachEvents() {
   
   bind('sett-logout', 'click', () => {
     signOut(auth).then(() => {
+      localStorage.removeItem('yathra_current_user');
+      state.currentUser = null;
       state.user = { ...initialUserState };
       state.user.permissions = { camera: false, notifications: false };
       state.petitionSignatures = 8742; state.petitionSigned = false; state.navStack = [];
-      navigate('splash'); showNotification("Session terminated safely.");
+      navigate('landing'); showNotification("Session terminated safely.");
     }).catch((error) => { showNotification("Logout mapping error: " + error.message); });
   });
   
