@@ -2694,4 +2694,275 @@ body.map-active #map-container .leaflet-container {
   padding: 20px;
 }
 
-
+
+
+/* Reposition Leaflet Zoom Control away from top-left back button */
+.leaflet-top.leaflet-left {
+  top: auto !important;
+  left: auto !important;
+  bottom: 80px !important;
+  right: 16px !important;
+}
+.leaflet-touch .leaflet-bar {
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Item 4: Fix Map Description Card Cutoff / Notch Collision */
+.map-top-bar,
+.map-description,
+.map-header,
+.map-legend-floating,
+#map-back-container {
+  margin-top: max(24px, env(safe-area-inset-top, 20px)) !important;
+  z-index: 99998 !important;
+}
+
+/* Item 5: Fix Sticky Footer Navigation on Map View */
+body.map-active .bottom-nav,
+#map-view ~ .bottom-nav,
+.bottom-nav {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 100% !important;
+  max-width: 480px !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Item 7: Scrollable Dashboard Padding */
+.dashboard-scrollable-container {
+  padding-bottom: 90px !important;
+}
+
+/* Item 2: Confine Activity & Notifications Modal Inside the Viewport Frame */
+.activity-drawer-overlay,
+.auth-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 480px !important;
+  margin: 0 auto !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(0, 0, 0, 0.55) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 999999 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.activity-drawer-card,
+.auth-modal-card {
+  width: 100% !important;
+  max-width: 380px !important;
+  max-height: 85vh !important;
+  overflow-y: auto !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3) !important;
+  position: relative !important;
+}
+
+/* Item 4: Single-Line Centered Experiences Button Text */
+.experience-btn,
+.category-pill,
+.experiences-tag,
+#dash-tag-experiences,
+#dash-tag-heritage,
+#dash-tag-gems,
+.searcher-tags .badge-tag {
+  white-space: nowrap !important;
+  text-align: center !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+}
+
+/* Item 5: Fix Map Dragging, Panning & Grab/Grabbing Cursors */
+#yathra-main-map,
+.leaflet-container,
+.gm-style {
+  cursor: grab !important;
+  cursor: -webkit-grab !important;
+  touch-action: auto !important;
+  pointer-events: auto !important;
+}
+
+#yathra-main-map:active,
+.leaflet-container:active,
+.gm-style:active,
+.leaflet-dragging .leaflet-container {
+  cursor: grabbing !important;
+  cursor: -webkit-grabbing !important;
+}
+
+#map-view,
+.map-screen-layout,
+.leaflet-pane {
+  pointer-events: auto !important;
+  touch-action: pan-x pan-y !important;
+}
+
+/* Item 1: Universal Pixel-Locked Sticky Footer & App Shell Viewport Lock */
+html, body, #app, .app-root, .app-viewport, #app-container {
+  height: 100% !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+  position: relative !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.bottom-nav,
+body.map-active .bottom-nav,
+#directory-view ~ .bottom-nav,
+#map-view ~ .bottom-nav,
+#dashboard-view ~ .bottom-nav,
+#site-detail-view ~ .bottom-nav {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 100% !important;
+  max-width: 480px !important;
+  height: 64px !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06) !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-around !important;
+  box-sizing: border-box !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.dashboard-scrollable-container,
+.directory-cards-scroller,
+.site-detail-scroll-container,
+.screen-scrollable-content {
+  height: calc(100% - 64px) !important;
+  max-height: calc(100% - 64px) !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-bottom: 24px !important;
+  box-sizing: border-box !important;
+}
+
+#map-view,
+#yathra-main-map,
+.map-screen-layout {
+  height: calc(100% - 64px) !important;
+  width: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  bottom: 64px !important;
+}
+
+/* Item 2C: Presence Camera UI Styling */
+.presence-camera-container {
+  width: 100%;
+  height: 280px;
+  background: #1A1A1A;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.live-camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+.camera-controls-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+.btn-shutter {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  border: 3px solid #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease;
+}
+
+.btn-shutter:active {
+  transform: scale(0.92);
+}
+
+.shutter-inner-circle {
+  width: 48px;
+  height: 48px;
+  background: #FFFFFF;
+  border-radius: 50%;
+}
+
+/* Dashboard view container safe-area clearance & Notch Alignment */
+#dashboard-view,
+.dashboard-view-wrapper,
+.dashboard-screen {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.dashboard-header,
+.dashboard-top-bar,
+.dash-header-section,
+#dashboard-view .header-bar {
+  padding-top: max(44px, env(safe-area-inset-top, 40px)) !important;
+  padding-bottom: 12px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  flex-shrink: 0 !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  z-index: 10 !important;
+}
+
+.dashboard-scrollable-container,
+.dashboard-content-scroll {
+  flex: 1 1 auto !important;
+  height: calc(100% - 64px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding: 12px 16px 90px 16px !important;
+  box-sizing: border-box !important;
+}

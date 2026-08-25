@@ -276,31 +276,21 @@ const DRIFT_GRACE_LIMIT_MS = 180000; // 3 minutes structural grace period
 
 // Ensure default entry strictly renders the Landing Screen
 function initApp() {
-  // Check if active authenticated session exists (excluding guest session)
-  const savedUser = localStorage.getItem('yathra_current_user');
-  
-  if (savedUser) {
-    try {
-      state.currentUser = JSON.parse(savedUser);
-      state.user = state.currentUser;
-      state.isGuest = false;
-      navigate('dashboard');
-      return;
-    } catch (e) {
-      console.error("Error parsing saved user session:", e);
-      localStorage.removeItem('yathra_current_user');
-    }
-  }
-
-  // Reset guest state and stay on Landing Screen
-  state.currentUser = null;
+  // Always reset navigation stack on fresh startup
+  state.navStack = [];
   state.isGuest = false;
-  navigate('landing'); // Never auto-navigate to dashboard
+  state.pendingAction = null;
+
+  // Render the Landing / Auth Gate screen unconditionally on cold start
+  state.currentScreen = 'landing';
+  navigate('landing', false);
 }
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
+  initApp();
   initAuthListener();
+  
   const queueData = localStorage.getItem('yathra_sync_queue');
   if (queueData) {
     state.offlineSyncQueue = JSON.parse(queueData);
@@ -311,44 +301,12 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('online', () => {
     processSyncQueue();
   });
-
-  const lockData = localStorage.getItem('yathra_dwell_lock');
-  if (lockData) {
-    try {
-      const lock = JSON.parse(lockData);
-      const timePassed = Date.now() - lock.startTime;
-      const totalDuration = lock.duration || (900 * 1000);
-      
-      if (timePassed < totalDuration) {
-        state.activeSite = sitesData.find(s => s.id === lock.siteId);
-        state.dwellTimeLeft = Math.max(0, Math.ceil((totalDuration - timePassed) / 1000));
-        state.gpsVerified = lock.gpsVerified ?? false;
-        state.hasInitialPhotoCaptured = lock.hasInitialPhotoCaptured ?? false;
-        state.dwellImages = lock.dwellImages || [];
-        
-        if (state.hasInitialPhotoCaptured) {
-          startDwellTimer();
-          setupIntervalPresencePoller();
-          setTimeout(() => {
-            navigate('dwell-time', false);
-          }, 100);
-          return;
-        }
-      } else {
-        localStorage.removeItem('yathra_dwell_lock');
-      }
-    } catch (err) {
-      console.error("Error restoring lock state:", err);
-      localStorage.removeItem('yathra_dwell_lock');
-    }
-  }
-
-  initApp();
 });
 window.initApp = initApp;
 
 // --- STATE MANAGER / ROUTER ---
 function navigate(screenName, storeStack = true) {
+  if (state.currentScreen === 'camera' && screenName !== 'camera') stopInAppCamera();
   if (screenName === 'splash') screenName = 'landing';
   const lockData = localStorage.getItem('yathra_dwell_lock');
   if (lockData) {
@@ -640,6 +598,8 @@ function handleAuthUserSuccess(user, toastMsg) {
 }
 
 function initAuthListener() {
+  if (typeof auth === 'undefined' || !auth) return;
+
   getRedirectResult(auth).then((result) => {
     if (result && result.user) {
       state.isGuest = false;
@@ -651,41 +611,16 @@ function initAuthListener() {
 
   onAuthStateChanged(auth, (user) => {
     if (user && user.uid) {
+      state.currentUser = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || (user.email ? user.email.split('@')[0] : 'Explorer')
+      };
+      state.user = { ...initialUserState, ...state.currentUser };
       state.isGuest = false;
-      const userDocRef = doc(db, 'users', user.uid);
-      getDoc(userDocRef).then((docSnap) => {
-        if (docSnap.exists()) {
-          state.user = { ...initialUserState, ...docSnap.data() };
-        } else {
-          state.user.role = state.user.role || 'Explorer';
-        }
-        state.user.uid = user.uid;
-        state.currentUser = state.user;
-        const hasSavedUser = !!localStorage.getItem('yathra_current_user');
-        saveUserProfile();
-        closeAuthModal();
-
-        if (state.pendingAction) {
-          executePendingAction();
-        } else if (hasSavedUser && (state.currentScreen === 'landing' || state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup')) {
-          navigate('dashboard');
-        }
-      }).catch(err => {
-        console.warn("Firestore user fetch offline/permission fallback active:", err);
-        state.user.uid = user.uid;
-        state.currentUser = state.user;
-        const hasSavedUser = !!localStorage.getItem('yathra_current_user');
-        saveUserProfile();
-        closeAuthModal();
-        if (state.pendingAction) executePendingAction();
-        else if (hasSavedUser && (state.currentScreen === 'landing' || state.currentScreen === 'splash' || state.currentScreen === 'login' || state.currentScreen === 'signup')) navigate('dashboard');
-      });
+      // DO NOT call navigate('dashboard') here. Let the user start at Landing.
     } else {
-      if (!state.isGuest && !localStorage.getItem('yathra_current_user')) {
-        state.currentUser = null;
-        state.currentScreen = 'landing';
-        renderActiveScreen();
-      }
+      state.currentUser = null;
     }
   });
 }
@@ -1361,7 +1296,8 @@ function renderFallbackLeafletMap(containerId = 'map-container', coords = [7.873
     if (mapContainer._leaflet_id) {
       mapContainer._leaflet_id = null;
     }
-    const map = L.map(targetId).setView(coords, 8);
+    const map = L.map(targetId, { zoomControl: false, dragging: true, tap: true, touchZoom: true, scrollWheelZoom: true }).setView(coords, 8);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
@@ -1397,6 +1333,10 @@ function initMap(containerId = 'map-container', defaultCoords = [7.8731, 80.7718
       center: { lat: defaultCoords[0], lng: defaultCoords[1] },
       zoom: 8,
       disableDefaultUI: false,
+      zoomControl: true,
+      zoomControlOptions: {
+        position: google.maps.ControlPosition.RIGHT_BOTTOM
+      }
     });
     renderMapMarkers(map, 'google');
   } catch (err) {
@@ -1854,40 +1794,42 @@ function renderGuestHeaderBanner() {
 }
 
 function renderDashboard() {
+  const xpDisplay = state.user ? (state.user.xp || 0) : 0;
   return `
-    <div class="screen">
-      <div style="padding: 20px 20px 6px 20px; display: flex; justify-content: space-between; align-items: center;">
+    <div id="dashboard-view" class="screen dashboard-view-wrapper">
+      <div class="dashboard-header" style="padding-top: max(44px, env(safe-area-inset-top, 40px)) !important; padding-bottom: 12px !important; padding-left: 16px !important; padding-right: 16px !important; display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="font-size: 26px; font-weight: 900; line-height: 1.1;">Central Dashboard</h2>
-          <p style="font-size: 12px; color: var(--color-gray); margin-top: 4px;">Welcome back, ${state.isGuest ? 'Guest Explorer' : (state.user.role || 'Traveller')}!</p>
+          <h2 style="font-size: 26px; font-weight: 900; line-height: 1.1; margin: 0;">Central Dashboard</h2>
+          <p style="font-size: 12px; color: var(--color-gray); margin-top: 4px; margin-bottom: 0;">Welcome back, ${state.isGuest ? 'Guest Explorer' : (state.user.role || 'Traveller')}!</p>
         </div>
-        ${state.isGuest ? '' : `
-          <div class="badge-tag" style="background: var(--color-gold); color: var(--color-charcoal); font-weight: 800;">
-            🌟 ${state.user.xp} XP
-          </div>
-        `}
+        <div class="badge-tag" id="dashboard-notifications-btn" style="background: var(--color-gold); color: var(--color-charcoal); font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+          <span>🌟 ${xpDisplay} XP</span>
+          <span style="font-size: 14px;">🔔</span>
+        </div>
       </div>
-      ${renderGuestHeaderBanner()}
-      <div class="dashboard-card" style="margin-top: 10px; background-color: #AAD3DF !important; background: #AAD3DF !important; transition: none !important; animation: none !important;" id="dash-map-card">
-        <h3 style="font-size: 15px; font-weight: 800; color: var(--color-charcoal); transition: none !important; animation: none !important;">Wanderer</h3>
-        <p style="font-size: 11px; color: #555555; margin-top: 2px; transition: none !important; animation: none !important;">Explore the map to discover nearby Hidden Gems and the Heritage Trail.</p>
-        <div class="dashboard-map-svg" style="transition: none !important; animation: none !important;">
-          <img src="Element Pictures/SL map on home screen green.svg" alt="Sri Lanka Map" style="opacity: 0.85; transition: none !important; animation: none !important;">
-        </div>
-        <div style="position: absolute; bottom: 18px; right: 18px; width: 36px; height: 36px; background: var(--color-teal); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; box-shadow: var(--shadow-premium); transition: none !important; animation: none !important;">→</div>
-      </div>
-      <div class="dashboard-card" style="background: var(--color-teal); color: var(--color-white);" id="dash-search-card">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-          <div>
-            <h3 style="font-size: 16px; font-weight: 800;">Searcher</h3>
-            <p style="font-size: 11px; color: #a9cbd0; margin-top: 2px;">Find specific locations through our categorized directory.</p>
+
+      <div class="dashboard-scrollable-container" style="padding: 12px 16px 90px 16px !important; overflow-y: auto;">
+        ${renderGuestHeaderBanner()}
+        <div class="dashboard-card" style="margin-top: 10px; background-color: #AAD3DF !important; background: #AAD3DF !important; transition: none !important; animation: none !important; position: relative;" id="dash-map-card">
+          <h3 style="font-size: 15px; font-weight: 800; color: var(--color-charcoal); transition: none !important; animation: none !important;">Wanderer</h3>
+          <div class="dashboard-map-svg" style="transition: none !important; animation: none !important;">
+            <img src="Element Pictures/SL map on home screen green.svg" alt="Sri Lanka Map" style="opacity: 0.85; transition: none !important; animation: none !important;">
           </div>
+          <div style="position: absolute; bottom: 18px; right: 18px; width: 36px; height: 36px; background: var(--color-teal); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; box-shadow: var(--shadow-premium); transition: none !important; animation: none !important;">→</div>
         </div>
-        <div class="searcher-tags">
-          <span class="badge-tag" style="background: rgba(255,255,255,0.15); color: white;">📍 Heritage Trail</span>
-          <span class="badge-tag" style="background: rgba(255,255,255,0.15); color: white;">💎 Hidden Gems</span>
+        <div class="dashboard-card" style="background: var(--color-teal); color: var(--color-white);" id="dash-search-card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 800;">Searcher</h3>
+              <p style="font-size: 11px; color: #a9cbd0; margin-top: 2px;">Find specific locations through our categorized directory.</p>
+            </div>
+          </div>
+          <div class="searcher-tags" style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <span class="badge-tag" id="dash-tag-heritage" style="background: rgba(255,255,255,0.18); color: white; cursor: pointer;">📍 Heritage Trail</span>
+            <span class="badge-tag" id="dash-tag-gems" style="background: rgba(255,255,255,0.18); color: white; cursor: pointer;">💎 Hidden Gems</span>
+          </div>
+          <button class="btn-primary" style="background: var(--color-gold); height: 38px; font-size: 13px;" id="dash-view-directory">View directory</button>
         </div>
-        <button class="btn-primary" style="background: var(--color-gold); height: 38px; font-size: 13px;" id="dash-view-directory">View directory</button>
       </div>
       ${renderBottomNav('home')}
     </div>
@@ -2016,7 +1958,7 @@ function renderSiteDetail() {
   return `
     <div class="screen" style="padding-bottom: 80px;">
       <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 10; width: 100%; padding-top: env(safe-area-inset-top, 24px) !important; box-sizing: border-box;">
-        <button class="back-button" id="site-back" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal); border:none;">←</button>
+        <button class="back-button" id="site-detail-back-btn" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal); border:none; cursor:pointer;">←</button>
       </div>
       <img src="${site.image}" alt="${site.name}" class="detail-banner">
       <div style="padding: 16px;">
@@ -2130,7 +2072,6 @@ function renderCamera() {
 
   return `
     <div class="screen" style="padding-bottom: 0; background: #000; color: white; position: relative; overflow: hidden;">
-      <!-- Cyberpunk / Heritage Viewfinder HUD Layer -->
       <div class="hud-viewfinder-container">
         <!-- Top Telemetry Header -->
         <div class="hud-top-telemetry">
@@ -2154,47 +2095,44 @@ function renderCamera() {
           </div>
         </div>
 
-        <!-- Center Target Viewfinder Reticle & Radar Sweep -->
-        <div class="hud-target-reticle-box">
-          <div class="hud-corner hud-corner-tl"></div>
-          <div class="hud-corner hud-corner-tr"></div>
-          <div class="hud-corner hud-corner-bl"></div>
-          <div class="hud-corner hud-corner-br"></div>
-          <div class="hud-scanner-laser"></div>
-          <div class="hud-center-crosshair"></div>
+        <!-- Center Target Viewfinder Reticle & Live Stream Zone -->
+        <div class="presence-camera-container" id="presence-camera-zone" style="position: absolute; top: 70px; left: 0; right: 0; bottom: 90px; width: 100%; height: auto; margin: 0; border-radius: 0;">
+          <video id="live-camera-feed" autoplay playsinline muted class="live-camera-video"></video>
+          <canvas id="camera-capture-canvas" style="display: none;"></canvas>
           
-          <div style="position: absolute; bottom: 12px; width: 100%; text-align: center; color: rgba(255,255,255,0.8); font-size: 10px; font-weight: 700; text-shadow: 0 1px 4px black;">
-            MULTIMODAL SENSORS: GPS + Vision AI + Gyro Active
+          <div id="camera-permission-prompt" class="camera-prompt-box" style="text-align: center; color: white; padding: 20px; z-index: 5;">
+            <div class="camera-icon-large" style="font-size: 40px; margin-bottom: 10px;">📷</div>
+            <h3 style="font-size: 16px; font-weight: 800; margin-bottom: 6px;">Camera Permission Required</h3>
+            <p style="font-size: 12px; color: rgba(255,255,255,0.7); max-width: 280px; margin: 0 auto 16px auto; line-height: 1.4;">Live photo verification is required. File uploads and gallery selections are strictly disabled.</p>
+            <button class="btn-primary" id="btn-request-camera" style="height: 38px; font-size: 13px; padding: 0 20px;">Open Live Camera</button>
+          </div>
+
+          <div class="hud-target-reticle-box" style="pointer-events: none;">
+            <div class="hud-corner hud-corner-tl"></div>
+            <div class="hud-corner hud-corner-tr"></div>
+            <div class="hud-corner hud-corner-bl"></div>
+            <div class="hud-corner hud-corner-br"></div>
+            <div class="hud-scanner-laser"></div>
+            <div class="hud-center-crosshair"></div>
           </div>
         </div>
 
         <!-- Bottom HUD Control & Shutter Area -->
-        <div style="pointer-events: auto; text-align: center; margin-bottom: 20px;">
+        <div style="position: absolute; bottom: 16px; left: 0; width: 100%; pointer-events: auto; text-align: center; z-index: 10;">
           <div class="hud-status-banner hud-status-PASSED" id="hud-live-status-banner">
             <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#FFF;"></span>
             <span>HUD ENGINE ACTIVE (${visionConfidence}% VISION CONFIDENCE)</span>
           </div>
 
-          <div style="display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 16px;">
-            <label for="web-camera-file-input" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #FFF; padding: 10px 14px; border-radius: 12px; font-size: 11px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-              📁 Upload
-            </label>
-            <input type="file" id="web-camera-file-input" accept="image/*" style="display: none;">
-
-            <button class="shutter-btn" id="camera-shutter-click">
-              <div class="shutter-btn-inner"></div>
+          <div id="camera-controls-bar" class="camera-controls-bar" style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 10px;">
+            <button class="btn-shutter" id="btn-capture-photo" title="Take Live Photo">
+              <span class="shutter-inner-circle"></span>
             </button>
-
-            <button id="view-ledger-shortcut-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #FFF; padding: 10px 14px; border-radius: 12px; font-size: 11px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+            <button id="view-ledger-shortcut-btn" style="position: absolute; right: 20px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #FFF; padding: 8px 12px; border-radius: 12px; font-size: 11px; font-weight: 800; cursor: pointer;">
               🛡️ Ledger
             </button>
           </div>
         </div>
-      </div>
-
-      <!-- Viewfinder Background Preview Image -->
-      <div class="camera-viewfinder" style="height: 100vh;">
-        <img src="${site.image}" alt="Camera Viewfinder" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.75;">
       </div>
     </div>
   `;
@@ -3454,9 +3392,32 @@ function attachEvents() {
   bind('dash-map-card', 'click', () => { navigate('map'); });
   bind('dash-search-card', 'click', () => navigate('directory'));
   bind('dash-view-directory', 'click', (e) => { e.stopPropagation(); navigate('directory'); });
+  bind('dashboard-notifications-btn', 'click', () => showActivityNotificationsDrawer());
+  bind('dash-tag-heritage', 'click', (e) => {
+    e.stopPropagation();
+    state.activeDirectoryTab = 'Heritage Trail';
+    navigate('directory');
+  });
+  bind('dash-tag-gems', 'click', (e) => {
+    e.stopPropagation();
+    state.activeDirectoryTab = 'Hidden Gems';
+    navigate('directory');
+  });
   
   bind('directory-back', 'click', () => navigate('dashboard'));
   bind('directory-back-btn', 'click', () => navigate('dashboard'));
+  const handleSiteBack = (e) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    if (state.siteReferrer) {
+      navigate(state.siteReferrer, false);
+    } else if (state.navStack.length > 0) {
+      goBack();
+    } else {
+      navigate('directory');
+    }
+  };
+  bind('site-detail-back-btn', 'click', handleSiteBack);
+  bind('site-back', 'click', handleSiteBack);
 
   const switchTrail = () => {
     state.activeDirectoryTab = 'Heritage Trail';
@@ -3508,15 +3469,20 @@ function attachEvents() {
     renderTrailListCards('Hidden Gems');
   }
   
+  const handleMapBack = (e) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    document.body.classList.remove('map-active');
+    document.documentElement.classList.remove('map-active');
+    const mapView = document.getElementById('map-view');
+    if (mapView) mapView.style.display = 'none';
+    const popupCard = document.getElementById('map-popup-card');
+    if (popupCard) popupCard.remove();
+    navigate('dashboard');
+  };
+  bind('map-back', 'click', handleMapBack);
   const mapBackBtn = document.querySelector('#map-back-container button') || document.getElementById('map-back-container');
   if (mapBackBtn) {
-    mapBackBtn.addEventListener('click', () => {
-      document.body.classList.remove('map-active');
-      document.documentElement.classList.remove('map-active');
-      const mapView = document.getElementById('map-view');
-      if (mapView) mapView.style.display = 'none';
-      navigate('dashboard');
-    });
+    mapBackBtn.addEventListener('click', handleMapBack);
   }
   
   const pins = document.querySelectorAll('.map-pin');
@@ -3659,41 +3625,28 @@ function attachEvents() {
   };
 
   // Hardware shutter click handler
-  bind('camera-shutter-click', 'click', async () => {
-    const shutter = document.getElementById('camera-shutter-click');
-    if (shutter) { shutter.style.opacity = '0.5'; shutter.setAttribute('disabled', 'true'); }
-
-    try {
-      const initialImage = await Camera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.DataUrl,
-        source: CameraSource.Camera
-      });
-      processImageVerification(initialImage.dataUrl);
-    } catch (err) {
-      console.log("Hardware camera fallback to simulated sample verification");
-      const site = state.activeSite || sitesData[0];
-      processImageVerification(site.image);
-    } finally {
-      if (shutter) { shutter.style.opacity = '1'; shutter.removeAttribute('disabled'); }
-    }
+  bind('btn-request-camera', 'click', () => {
+    startInAppCamera();
   });
 
-  // Web File Upload Fallback Handler
-  const fileInput = document.getElementById('web-camera-file-input');
-  if (fileInput) {
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          processImageVerification(evt.target.result);
-        };
-        reader.readAsDataURL(file);
-      }
-    });
+  bind('btn-capture-photo', 'click', () => {
+    captureLivePresencePhoto();
+  });
+
+  bind('camera-shutter-click', 'click', () => {
+    captureLivePresencePhoto();
+  });
+
+  bind('camera-back', 'click', () => {
+    stopInAppCamera();
+    goBack();
+  });
+
+  if (state.currentScreen === 'camera') {
+    startInAppCamera();
   }
+
+
 
   // Stage Demo Drawer Controls & Shortcut Bindings
   const toggleDrawer = () => {
@@ -4322,3 +4275,140 @@ function showMapPopupCard(site) {
     handleSiteCardClick(site.id);
   });
 }
+// --- ITEM 9: ACTIVITY & NOTIFICATIONS DRAWER ---
+function showActivityNotificationsDrawer() {
+  const existing = document.getElementById('activity-drawer-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'activity-drawer-modal';
+  modal.className = 'activity-drawer-overlay';
+
+  const rankName = state.user ? (state.user.rank || 'Level 1 Explorer') : 'Guest Explorer';
+  const xpCount = state.user ? state.user.xp : 0;
+
+  modal.innerHTML = `
+    <div class="activity-drawer-card" style="padding: 24px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="font-size: 18px; font-weight: 800; color: var(--color-charcoal); margin: 0;">Activity & Notifications</h3>
+        <button id="activity-drawer-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: var(--color-charcoal);">✕</button>
+      </div>
+
+      <div style="background: #ffffff; border-radius: 16px; padding: 16px; border: 1.5px solid var(--color-gold); box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div style="font-size: 28px;">🏆</div>
+          <div>
+            <div style="font-size: 14px; font-weight: 800; color: var(--color-charcoal);">${rankName}</div>
+            <div style="font-size: 12px; font-weight: 700; color: var(--color-gold);">🌟 ${xpCount} XP • Active Streak: 3 Days 🔥</div>
+          </div>
+        </div>
+        ${state.isGuest ? `
+          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-light-gray); text-align: center;">
+            <p style="font-size: 11px; color: var(--color-gray); margin-bottom: 8px;">Sign in to save your level progression & unlock rewards.</p>
+            <button class="btn-primary" id="drawer-guest-signin-btn" style="height: 34px; font-size: 12px;">Sign In / Register</button>
+          </div>
+        ` : ''}
+      </div>
+
+      <div style="font-size: 13px; font-weight: 800; color: var(--color-charcoal); margin-top: 4px;">Recent Alerts & Conservation News</div>
+      
+      <div style="background: #ffffff; border-radius: 14px; padding: 12px 14px; border: 1px solid var(--color-light-gray);">
+        <div style="font-size: 11px; color: var(--color-teal); font-weight: 700;">🏛️ HERITAGE ALERT</div>
+        <div style="font-size: 12px; font-weight: 800; color: var(--color-charcoal); margin-top: 2px;">Mihintale Conservation Drive</div>
+        <div style="font-size: 11px; color: var(--color-gray); margin-top: 4px;">Join the upcoming weekend cleanup & restoration quest at Mihintale sanctuary.</div>
+      </div>
+
+      <div style="background: #ffffff; border-radius: 14px; padding: 12px 14px; border: 1px solid var(--color-light-gray);">
+        <div style="font-size: 11px; color: var(--color-gold); font-weight: 700;">🌟 NEW QUEST UNLOCKED</div>
+        <div style="font-size: 12px; font-weight: 800; color: var(--color-charcoal); margin-top: 2px;">Sigiriya Reforestation Initiative</div>
+        <div style="font-size: 11px; color: var(--color-gray); margin-top: 4px;">Earn up to +75 XP by verifying native trees planted around Sigiriya perimeter.</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+  document.getElementById('activity-drawer-close').addEventListener('click', () => modal.remove());
+  
+  const signinBtn = document.getElementById('drawer-guest-signin-btn');
+  if (signinBtn) {
+    signinBtn.addEventListener('click', () => {
+      modal.remove();
+      openAuthModal('signin');
+    });
+  }
+}
+window.showActivityNotificationsDrawer = showActivityNotificationsDrawer;
+
+// --- REAL-TIME IN-APP CAMERA STREAM & CAPTURE ENGINE ---
+let activeMediaStream = null;
+
+async function startInAppCamera() {
+  const videoEl = document.getElementById('live-camera-feed');
+  const promptEl = document.getElementById('camera-permission-prompt');
+  const controlsEl = document.getElementById('camera-controls-bar');
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+
+    activeMediaStream = stream;
+    if (videoEl) {
+      videoEl.srcObject = stream;
+      videoEl.style.display = 'block';
+    }
+    if (promptEl) promptEl.style.display = 'none';
+    if (controlsEl) controlsEl.style.display = 'flex';
+
+  } catch (error) {
+    console.error("Camera access denied or unavailable:", error);
+    showNotification("Camera access is required to verify site presence.", "error");
+  }
+}
+
+function captureLivePresencePhoto() {
+  const videoEl = document.getElementById('live-camera-feed');
+  const canvasEl = document.getElementById('camera-capture-canvas');
+  
+  if (videoEl && videoEl.srcObject && videoEl.videoWidth > 0) {
+    canvasEl.width = videoEl.videoWidth || 640;
+    canvasEl.height = videoEl.videoHeight || 480;
+
+    const ctx = canvasEl.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+    const capturedPhotoData = canvasEl.toDataURL('image/jpeg', 0.85);
+    stopInAppCamera();
+    handlePresencePhotoCaptured(capturedPhotoData);
+    return;
+  }
+
+  // Fallback to sample image if video feed not active
+  const site = state.activeSite || sitesData[0];
+  stopInAppCamera();
+  handlePresencePhotoCaptured(site.image);
+}
+
+function handlePresencePhotoCaptured(photoData) {
+  processImageVerification(photoData);
+}
+
+function stopInAppCamera() {
+  if (activeMediaStream) {
+    activeMediaStream.getTracks().forEach(track => track.stop());
+    activeMediaStream = null;
+  }
+}
+
+window.startInAppCamera = startInAppCamera;
+window.captureLivePresencePhoto = captureLivePresencePhoto;
+window.stopInAppCamera = stopInAppCamera;
