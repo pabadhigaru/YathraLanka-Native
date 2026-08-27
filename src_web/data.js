@@ -18,7 +18,8 @@ export const initialUserState = {
   unlockedCoupons: [], // Sigiriya Scholar Coupon, etc.
   completedQuizzes: {}, // siteId -> true
   dwellTimeCompleted: {}, // siteId -> true
-  verifiedPhotos: {} // siteId -> true
+  verifiedPhotos: {}, // siteId -> true
+  completedCheckpoints: [] // cpId -> true
 };
 
 export const rankingScale = [
@@ -37,7 +38,55 @@ export const leaderboardPlayers = [
   { name: "Mihiranga T.", points: 1160, role: "Quiz Master", rank: "Island Explorer" }
 ];
 
-export const sitesData = [
+export const sitesData = [,
+  {
+    id: "competition_demo",
+    name: "YathraLanka Arena (Live Demo)",
+    district: "Competition Grounds",
+    category: "Heritage Trail",
+    xpRange: "50 - 100 XP",
+    minXp: 50,
+    maxXp: 100,
+    distance: "0.1km",
+    openStatus: "Open now",
+    description: "Official competition live demo venue for multi-checkpoint heritage scavenger hunt verification.",
+    image: "Element Pictures/Sigiriya-LionRock.jpg",
+    latitude: 6.8402,
+    longitude: 80.0034,
+    referenceImage: "Element Pictures/Sigiriya-LionRock.jpg",
+    checkpoints: [
+      {
+        id: "demo_stage_banner",
+        name: "Main Stage / YathraLanka Podium",
+        description: "The official stage banner and presentation podium.",
+        referenceImage: "Element Pictures/Sigiriya-LionRock.jpg",
+        hint: "Align the official event banner in the center of your camera.",
+        xpReward: 100,
+        embedding: [0.095, -0.022, 0.145, 0.068]
+      },
+      {
+        id: "demo_booth_marker",
+        name: "YathraLanka Innovation Stall",
+        description: "The project team booth featuring our visual heritage display.",
+        referenceImage: "Element Pictures/Pilikuttuwa-Cave.jpg",
+        hint: "Take a clear shot of the stall standee or banner.",
+        xpReward: 75,
+        embedding: [0.034, 0.088, -0.012, 0.105]
+      }
+    ],
+    quizzes: [
+      {
+        question: "What is the primary goal of YathraLanka's heritage gamification?",
+        options: [
+          "Promote unsustainable tourism",
+          "Combine physical site exploration with conservation ledgers and gamified XP rewards",
+          "Replace physical travel with VR completely",
+          "Charge entry fees at monuments"
+        ],
+        correctIndex: 1
+      }
+    ]
+  },
   // HERITAGE TRAIL
   {
     id: "mihintale",
@@ -53,6 +102,26 @@ export const sitesData = [
     image: "Element Pictures/Mihintale.JPG",
     latitude: 8.3508,
     longitude: 80.5186,
+    checkpoints: [
+      {
+        id: "mihintale_ambasthala",
+        name: "Ambasthala Dagaba",
+        description: "The stupa built on the spot where Arahat Mahinda met King Devanampiyatissa.",
+        referenceImage: "Element Pictures/Mihintale.JPG",
+        hint: "Align the octagonal pillar base and white stupa in your frame.",
+        xpReward: 50,
+        embedding: [0.042, -0.019, 0.128, 0.085, -0.012, 0.064]
+      },
+      {
+        id: "mihintale_kantaka",
+        name: "Kantaka Cetiya Vahalkada",
+        description: "Intricate stone carvings and dwarf friezes on the ancient frontispiece.",
+        referenceImage: "Element Pictures/Mihintale.JPG",
+        hint: "Capture the detailed stone carvings on the eastern vahalkada.",
+        xpReward: 60,
+        embedding: [0.081, 0.005, -0.044, 0.112, 0.035, -0.021]
+      }
+    ],
     referenceImage: "Element Pictures/Mihintale.JPG",
     quizzes: [
       {
@@ -121,6 +190,26 @@ export const sitesData = [
     image: "Element Pictures/Sigiriya-LionRock.jpg",
     latitude: 7.9570,
     longitude: 80.7603,
+    checkpoints: [
+      {
+        id: "sigiriya_lion_paws",
+        name: "Colossal Lion Paws Gate",
+        description: "The massive lion paws framing the staircase to the summit palace.",
+        referenceImage: "Element Pictures/Sigiriya-LionRock.jpg",
+        hint: "Center the two massive lion paw sculptures in your camera viewfinder.",
+        xpReward: 60,
+        embedding: [0.092, 0.014, 0.115, 0.073]
+      },
+      {
+        id: "sigiriya_frescoes",
+        name: "Celestial Maidens Frescoes",
+        description: "5th-century cave murals depicting celestial damsels.",
+        referenceImage: "Element Pictures/Sigiriya-LionRock.jpg",
+        hint: "Capture the vivid fresco colors inside the sheltered rock gallery.",
+        xpReward: 75,
+        embedding: [0.051, -0.032, 0.088, 0.142]
+      }
+    ],
     referenceImage: "Element Pictures/Sigiriya-LionRock.jpg",
     quizzes: [
       {

@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, isSupported } from "firebase/analytics";
 import { getAuth, initializeAuth, indexedDBLocalPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -15,17 +15,34 @@ const firebaseConfig = {
 
 console.log("Config keys being used:", firebaseConfig.projectId);
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const analytics = getAnalytics(app);
+
+export let analytics = null;
+if (typeof window !== 'undefined') {
+  isSupported().then(supported => {
+    if (supported) {
+      try {
+        analytics = getAnalytics(app);
+      } catch (e) {
+        console.warn("Analytics skipped on localhost:", e);
+      }
+    }
+  }).catch(() => {});
+}
 
 let auth;
 try {
   auth = getAuth(app);
 } catch (e) {
-  auth = initializeAuth(app, {
-    persistence: [indexedDBLocalPersistence, browserLocalPersistence]
-  });
+  try {
+    auth = initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence]
+    });
+  } catch (err) {
+    console.warn("Firebase Auth fallback initialization:", err);
+    auth = getAuth(app);
+  }
 }
 
 const db = getFirestore(app);
 
-export { app, analytics, auth, db };
+export { app, auth, db };

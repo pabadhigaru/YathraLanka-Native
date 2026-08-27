@@ -41,19 +41,20 @@
 }
 
 html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-  background-color: var(--color-cream);
+body,
+#root,
+.app-layout-wrapper {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100vw !important;
+  min-height: 100vh !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  background-color: #F6F4EB !important; /* Soft background */
+  overflow: hidden !important;
+  box-sizing: border-box !important;
   font-family: var(--font-body);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  overflow-x: hidden;
-  touch-action: manipulation;
 }
 
 #app,
@@ -65,24 +66,31 @@ main,
   padding: 0;
   width: 100%;
   height: 100%;
-  background-color: var(--color-cream);
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
-/* --- PRESENTATION CHASSIS (iPhone 15 Pro Wrapper) --- */
-.iphone-chassis {
-  width: 393px;
-  height: 852px;
-  background: var(--color-cream);
-  border: 12px solid #2f3032;
-  border-radius: 48px;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4), 0 0 0 4px #434447;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+/* Strict Mobile Chassis (iPhone 15/16 Pro Dimensions) */
+.iphone-chassis,
+.mobile-frame,
+#app-frame {
+  position: relative !important;
+  width: 393px !important;
+  max-width: 393px !important;
+  min-width: 393px !important;
+  height: 852px !important;
+  max-height: 852px !important;
+  min-height: 852px !important;
+  background: #F8F7F2 !important;
+  border-radius: 54px !important;
+  border: 12px solid #222222 !important;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  margin: 0 auto !important;
 }
 
 /* Speaker Notch */
@@ -98,18 +106,20 @@ main,
   z-index: 1000;
 }
 
-/* Dynamic Island */
+/* Dynamic Island Notch */
+.dynamic-island,
+.notch,
 .iphone-dynamic-island {
-  width: 110px;
-  height: 30px;
-  background: #000000;
-  border-radius: 18px;
-  position: absolute;
-  top: 13px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  transition: var(--transition-smooth);
+  position: absolute !important;
+  top: 10px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 120px !important;
+  height: 32px !important;
+  background: #000000 !important;
+  border-radius: 20px !important;
+  z-index: 10000 !important;
+  pointer-events: none !important;
 }
 
 /* iOS Home Swipe Bar Indicator */
@@ -119,7 +129,7 @@ main,
   background: var(--color-charcoal);
   border-radius: 3px;
   position: absolute;
-  bottom: 8px;
+  bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
@@ -128,15 +138,12 @@ main,
 
 /* App Viewport Container */
 .app-viewport {
-  flex: 1;
+  position: relative;
   width: 100%;
   height: 100%;
-  margin-top: 48px;
-  /* Offset status bar */
-  margin-bottom: 20px;
-  /* Offset home swipe indicator */
   overflow: hidden;
-  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Screen Shell Base & Touch Scroll Controls */
@@ -2965,4 +2972,1370 @@ body.map-active .bottom-nav,
   -webkit-overflow-scrolling: touch !important;
   padding: 12px 16px 90px 16px !important;
   box-sizing: border-box !important;
+}
+
+/* Item 1: Remove Bottom White Line / Gap on Map View */
+#map-view,
+#yathra-main-map,
+.map-screen-layout {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: calc(100% - 64px) !important;
+  bottom: 64px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  background-color: #E8E2D2 !important; /* Matches map background to prevent white flashes */
+}
+
+body.map-active .bottom-nav,
+#map-view ~ .bottom-nav {
+  border-top: none !important;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.12) !important;
+  margin-top: 0 !important;
+}
+
+/* Item 2: Hide Leaflet Attribution Text Overlay */
+.leaflet-control-attribution,
+.leaflet-bottom.leaflet-right .leaflet-control-attribution {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Full-Bleed Map Behind Footer */
+#map-view,
+#yathra-main-map,
+.map-screen-layout,
+.leaflet-container {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  z-index: 1 !important;
+}
+
+body.map-active .bottom-nav,
+#map-view ~ .bottom-nav,
+.screen.map-screen .bottom-nav {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 100% !important;
+  max-width: 480px !important;
+  height: 64px !important;
+  border: none !important;
+  border-top: none !important;
+  outline: none !important;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15) !important;
+  margin: 0 !important;
+  z-index: 999999 !important;
+}
+
+.screen.map-screen,
+#app-container.map-active,
+.app-viewport.map-active {
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+/* Ensure Overlay Captures Outside Clicks & Blocks Underlying Map Events */
+.auth-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000000 !important;
+  pointer-events: auto !important;
+  cursor: pointer; /* Indicates clicking outside will dismiss */
+}
+
+.auth-modal-card {
+  cursor: default; /* Keeps standard cursor inside the card */
+  pointer-events: auto !important;
+}
+
+/* Item 1: Visibility of Map Zoom Controls */
+.leaflet-control-zoom,
+.leaflet-bar {
+  display: flex !important;
+  flex-direction: column !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 9999 !important;
+  position: absolute !important;
+  right: 16px !important;
+  bottom: 84px !important; /* Positioned directly above the 64px footer */
+  background: #FFFFFF !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+  overflow: hidden !important;
+}
+
+.leaflet-control-zoom a {
+  width: 38px !important;
+  height: 38px !important;
+  line-height: 38px !important;
+  text-align: center !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  color: #1A1A1A !important;
+  background-color: #FFFFFF !important;
+  display: block !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+}
+
+.leaflet-control-zoom a:first-child {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Item 2: Center "Unlock Site Details" Modal Inside the Mobile Viewport */
+.auth-modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000000 !important;
+  padding: 20px !important;
+  box-sizing: border-box !important;
+}
+
+.auth-modal-card {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 360px !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-radius: 18px !important;
+  padding: 24px 20px !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35) !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+  margin: auto !important;
+}
+
+/* Item 3: Safe-area clearance for Profile, Impact, Rewards, and general header titles */
+#profile-view,
+#impact-view,
+#rewards-view,
+.profile-container,
+.impact-container,
+.rewards-container,
+.profile-screen,
+.activism-screen,
+.rewards-screen {
+  padding-top: max(48px, env(safe-area-inset-top, 44px)) !important;
+  box-sizing: border-box !important;
+}
+
+.profile-header,
+.impact-header,
+.rewards-header,
+.screen-header {
+  margin-top: 0 !important;
+  padding-top: 8px !important;
+}
+
+/* Safe-Area Clearance for Activism / Make an Impact and Rewards Screens */
+#activism-view,
+#impact-view,
+.activism-screen,
+.activism-container,
+.make-impact-view,
+.impact-dashboard-container {
+  padding-top: max(56px, env(safe-area-inset-top, 52px)) !important;
+  box-sizing: border-box !important;
+}
+
+#rewards-view,
+.rewards-screen,
+.rewards-container,
+.rewards-dashboard-container {
+  padding-top: max(56px, env(safe-area-inset-top, 52px)) !important;
+  box-sizing: border-box !important;
+}
+
+#activism-view .header-bar,
+#activism-view .screen-header,
+#activism-view .activism-top-header,
+#impact-view .header-bar,
+#impact-view .screen-header,
+#impact-view .activism-top-header,
+#rewards-view .header-bar,
+#rewards-view .screen-header,
+#rewards-view .rewards-top-header {
+  margin-top: 6px !important;
+  padding-top: 10px !important;
+  padding-bottom: 12px !important;
+}
+
+#activism-view .screen-scrollable-content,
+#impact-view .screen-scrollable-content,
+#rewards-view .screen-scrollable-content,
+#activism-view .dashboard-scrollable-container,
+#impact-view .dashboard-scrollable-container,
+#rewards-view .dashboard-scrollable-container {
+  height: calc(100% - 64px) !important;
+  padding-bottom: 80px !important;
+}
+
+/* Ensure the parent chassis/viewport creates a positioning context */
+.app-viewport,
+.iphone-chassis,
+#app,
+.app-root {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* Confine modal overlay strictly inside the phone frame */
+.auth-modal-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000000 !important;
+  padding: 20px !important;
+  box-sizing: border-box !important;
+}
+
+.auth-modal-card {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 320px !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-radius: 18px !important;
+  padding: 24px 20px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35) !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+  margin: auto !important;
+}
+
+.auth-modal-title {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: #1A1A1A !important;
+  margin-bottom: 8px !important;
+}
+
+.auth-modal-message {
+  font-size: 14px !important;
+  color: #555555 !important;
+  line-height: 1.4 !important;
+  margin-bottom: 20px !important;
+}
+
+.auth-modal-actions {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}
+
+.auth-modal-btn-primary {
+  width: 100% !important;
+  padding: 12px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  border-radius: 10px !important;
+}
+
+.auth-modal-btn-secondary {
+  width: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  color: #777777 !important;
+  font-size: 13px !important;
+  padding: 8px !important;
+  cursor: pointer !important;
+}
+
+/* Item 1: Fix Modal Horizontal Centering & Left Cutoff */
+.auth-modal-overlay,
+#auth-required-modal-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  transform: none !important; /* Strips out any conflicting horizontal shift */
+  margin: 0 !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000000 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.auth-modal-card,
+#auth-required-modal-card {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 310px !important;
+  margin: auto !important;
+  transform: none !important;
+  left: auto !important;
+  right: auto !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-radius: 18px !important;
+  padding: 24px 20px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35) !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+}
+
+/* Item 2: Apply Dynamic Island / Notch Clearance on Donation View */
+#donation-view,
+.donation-screen,
+.donation-container,
+.donation-view-wrapper,
+#donate-view {
+  padding-top: max(56px, env(safe-area-inset-top, 52px)) !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+#donation-view .header-bar,
+#donation-view .screen-header,
+#donation-view .donation-header,
+.donation-header-row {
+  margin-top: 6px !important;
+  padding-top: 10px !important;
+  padding-bottom: 12px !important;
+}
+
+#donation-view .screen-scrollable-content,
+#donation-view .donation-body {
+  padding-bottom: 80px !important;
+}
+
+/* Item 1: Profile Page Guest Card Overflow & Centering */
+.profile-guest-card,
+.profile-auth-prompt-box,
+#profile-view .guest-banner {
+  width: 100% !important;
+  max-width: calc(100% - 32px) !important;
+  margin: 16px auto !important;
+  box-sizing: border-box !important;
+  padding: 20px 16px !important;
+  border-radius: 16px !important;
+  transform: none !important;
+  left: auto !important;
+  right: auto !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+}
+
+#profile-view {
+  overflow-x: hidden !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  box-sizing: border-box !important;
+}
+
+/* Item 2: Verification / Presence Confirmation Screen Safe Area Clearance */
+#camera-view,
+#verify-presence-view,
+.camera-screen,
+.presence-verification-view {
+  padding-top: max(54px, env(safe-area-inset-top, 48px)) !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow-y: auto !important;
+}
+
+.target-checkpoint-header,
+.checkpoint-top-card,
+.presence-header-banner {
+  margin-top: 8px !important;
+  margin-bottom: 12px !important;
+  width: calc(100% - 32px) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box !important;
+  z-index: 10 !important;
+}
+
+/* Item 3C: Camera Viewfinder & HUD Styling */
+.camera-feed-wrapper {
+  position: relative;
+  width: calc(100% - 32px);
+  margin: 0 auto;
+  height: 320px;
+  background: #111111;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-hud-badge {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #00E676;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 5;
+}
+
+.hud-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #00E676;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #00E676;
+}
+
+.camera-bottom-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding-bottom: 24px;
+}
+
+.shutter-button-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.camera-secondary-actions {
+  display: flex;
+  justify-content: center;
+}
+
+/* Confine Activity Drawer Overlay strictly inside the phone frame */
+.activity-drawer-overlay,
+#activity-notifications-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000000 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+/* Modal Card strictly centered inside the mobile screen */
+.activity-drawer-card,
+#activity-notifications-card {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 330px !important;
+  max-height: 82% !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-radius: 18px !important;
+  padding: 20px 18px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35) !important;
+  box-sizing: border-box !important;
+  margin: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.activity-drawer-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  padding-bottom: 12px !important;
+  margin-bottom: 12px !important;
+}
+
+.activity-drawer-header h3 {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+  color: #1A1A1A !important;
+}
+
+.drawer-subtitle {
+  font-size: 13px !important;
+  color: #0C6C7A !important;
+  font-weight: 600 !important;
+  margin: 4px 0 0 0 !important;
+}
+
+.drawer-close-btn {
+  background: transparent !important;
+  border: none !important;
+  font-size: 24px !important;
+  line-height: 1 !important;
+  color: #666666 !important;
+  cursor: pointer !important;
+  padding: 0 4px !important;
+}
+
+.activity-drawer-content {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  flex: 1 1 auto !important;
+}
+
+.activity-stat-box {
+  display: flex !important;
+  gap: 8px !important;
+  margin-bottom: 14px !important;
+}
+
+.stat-pill {
+  flex: 1 !important;
+  background: rgba(12, 108, 122, 0.08) !important;
+  border: 1px solid rgba(12, 108, 122, 0.2) !important;
+  color: #0C6C7A !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+  padding: 6px 8px !important;
+  border-radius: 8px !important;
+}
+
+.activity-section-title {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #333333 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  margin: 10px 0 8px 0 !important;
+}
+
+.activity-item {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  padding: 8px 0 !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.activity-icon {
+  font-size: 18px !important;
+}
+
+.activity-details strong {
+  font-size: 13px !important;
+  color: #1A1A1A !important;
+  display: block !important;
+}
+
+.activity-details p {
+  font-size: 12px !important;
+  color: #666666 !important;
+  margin: 2px 0 0 0 !important;
+  line-height: 1.3 !important;
+}
+
+.drawer-guest-footer {
+  margin-top: 14px !important;
+  padding-top: 12px !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.08) !important;
+  text-align: center !important;
+}
+
+.drawer-guest-footer p {
+  font-size: 12px !important;
+  color: #555555 !important;
+  margin-bottom: 8px !important;
+}
+
+/* Item 1: Profile Page Guest Card Fix */
+.profile-guest-card,
+.profile-auth-prompt-box,
+#profile-view .guest-banner {
+  width: 100% !important;
+  max-width: calc(100% - 32px) !important;
+  height: auto !important; /* Prevents button from overflowing fixed heights */
+  min-height: fit-content !important;
+  margin: 16px auto !important;
+  box-sizing: border-box !important;
+  padding: 20px 16px !important;
+  border-radius: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  overflow: visible !important;
+}
+
+.profile-guest-card .btn-primary,
+.profile-guest-card .btn-auth-action,
+.profile-auth-prompt-box button {
+  width: 100% !important;
+  max-width: 240px !important;
+  margin-top: 14px !important;
+  margin-bottom: 4px !important;
+  padding: 12px 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+/* Item 2: Horizontal Centering & Left Shift on Dashboard XP Modal */
+.activity-drawer-overlay,
+#activity-notifications-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  transform: none !important; /* Strips conflicting translate offsets */
+  margin: 0 !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(4px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000000 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.activity-drawer-card,
+#activity-notifications-card {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 320px !important;
+  max-height: 85% !important;
+  margin: auto !important;
+  transform: none !important;
+  left: auto !important;
+  right: auto !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  border-radius: 18px !important;
+  padding: 22px 18px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35) !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow-y: auto !important;
+}
+
+/* Phase 5: Multi-Checkpoint Scavenger Hunt & Vision Matcher Styling */
+.checkpoint-card-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkpoint-card {
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.checkpoint-card:active {
+  transform: scale(0.98);
+}
+
+.checkpoint-card.completed {
+  border-color: #00E676 !important;
+  background: rgba(0, 230, 118, 0.04) !important;
+}
+
+.target-reference-preview-box {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.checkpoint-briefing-modal {
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+.verification-result-dialog {
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+/* Item 3: Pointer Events & Cursor Fix for Directory Site Cards */
+.site-card-item,
+.location-grid-card,
+.location-list-card {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+}
+
+.site-card-thumb,
+.site-card-content,
+.site-card-title,
+.site-card-location,
+.site-card-footer,
+.location-grid-card-img,
+.location-card-content,
+.location-card-title,
+.location-card-sub,
+.location-card-xp,
+.location-list-img,
+.location-list-content {
+  pointer-events: none !important; /* Let clicks pass through to parent card */
+}
+
+.site-card-bookmark-btn {
+  pointer-events: auto !important;
+}
+
+/* Site Navigation Routing Pointer Event Rules */
+.directory-card,
+.site-card-item,
+.location-grid-card,
+.location-list-card,
+[data-site-id] {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+}
+
+.site-card-thumb,
+.site-card-content,
+.site-card-title,
+.site-card-meta {
+  pointer-events: none !important;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-content,
+.map-popup-card {
+  pointer-events: auto !important;
+}
+
+.map-popup-btn,
+#map-popup-navigate-btn {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+/* Permanent Site Card & Map Popup Touch Rules */
+.directory-card,
+.site-card-item,
+.location-grid-card,
+.location-list-card,
+.map-popup-btn,
+[data-site-id] {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+.site-card-thumb,
+.site-card-content,
+.site-card-title,
+.site-card-location,
+.site-card-footer,
+.site-xp-pill,
+.location-grid-card-img,
+.location-card-content,
+.location-card-title,
+.location-card-sub,
+.location-card-xp,
+.location-list-img,
+.location-list-content {
+  pointer-events: none !important;
+}
+
+.leaflet-popup-content,
+.leaflet-popup-content-wrapper,
+.map-popup-card {
+  pointer-events: auto !important;
+}
+
+/* Step 4: Empty modal and safe area rules */
+.auth-modal-overlay:empty,
+#auth-required-modal-overlay:empty,
+#activity-notifications-overlay:empty,
+#checkpoint-briefing-modal-overlay:empty {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.site-detail-top-nav {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding-top: max(44px, env(safe-area-inset-top, 40px)) !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  padding-bottom: 12px !important;
+  background: var(--color-cream, #FDFBF7) !important;
+  z-index: 10 !important;
+}
+
+.site-detail-scroll-container {
+  height: calc(100% - 120px) !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-bottom: 80px !important;
+}
+
+/* Ensure the directory viewport fills the full chassis height without artificial cutoffs */
+.directory-screen,
+#directory-view,
+.screen.activism-screen,
+.screen {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure tab containers take 100% remaining space */
+.directory-tabs-content,
+.trail-view-container,
+.tab-content,
+#directory-tab-content {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Inner Screen Viewport */
+.screen-content,
+#app-screen,
+.app-viewport,
+.screen,
+.directory-screen,
+#directory-view,
+.screen.activism-screen {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+  padding-top: 48px !important; /* Space below dynamic island */
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.directory-tabs-content,
+.trail-view-container,
+.tab-content,
+#directory-tab-content {
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: transparent !important;
+}
+
+/* 2x2 Grid Container: Smooth scrolling with full row 3 visibility */
+.directory-list-container,
+.heritage-trail-grid,
+.hidden-gems-grid,
+.directory-grid-container,
+.locations-grid,
+#directory-grid-target,
+#list-cards-container {
+  flex: 1 1 auto !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 14px !important;
+  padding: 12px 14px 120px 14px !important; /* 120px clearance guarantees row 3 & below scroll completely past the footer */
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  background: transparent !important;
+}
+
+/* Bottom Navigation Bar: Locked inside the 393px phone chassis */
+.bottom-nav,
+.tab-bar,
+.app-footer-nav,
+#app-bottom-nav {
+  position: absolute !important;
+  bottom: 12px !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%) !important;
+  width: 360px !important;
+  max-width: calc(100% - 24px) !important;
+  height: 60px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  background: #FFFFFF !important;
+  border-radius: 22px !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12) !important;
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-around !important;
+  align-items: center !important;
+  padding: 4px 8px !important;
+  z-index: 9999 !important;
+}
+
+/* Equal button distribution across the 360px container */
+.bottom-nav .nav-item,
+.tab-bar .tab-btn,
+.app-footer-nav button {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 4px 0 !important;
+  margin: 0 !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  color: #777777 !important;
+}
+
+.bottom-nav .nav-item svg,
+.bottom-nav .nav-item img,
+.tab-bar .tab-btn svg,
+.tab-bar .tab-btn img {
+  width: 22px !important;
+  height: 22px !important;
+  display: block !important;
+  margin: 0 auto !important;
+}
+
+.bottom-nav .nav-label,
+.tab-bar .tab-btn span {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  margin-top: 2px !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+  line-height: 1 !important;
+}
+
+.bottom-nav .nav-item.active,
+.tab-bar .tab-btn.active {
+  color: #0C6C7A !important;
+  font-weight: 700 !important;
+}
+
+/* Hide footer bar specifically on the welcome / login gate screen */
+.screen.welcome-screen ~ .bottom-nav,
+.screen.landing-screen ~ .bottom-nav,
+.screen.auth-screen ~ .bottom-nav,
+.dark-theme ~ .bottom-nav {
+  display: none !important;
+}
+
+/* Individual Card Styling */
+.heritage-card,
+.site-card-item,
+.directory-card {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: #FFFFFF !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  box-sizing: border-box !important;
+  min-height: 180px !important;
+  height: auto !important;
+}
+
+/* Card Image */
+.heritage-card .card-img-wrapper,
+.site-card-item .card-img-wrapper,
+.site-card-thumb {
+  width: 100% !important;
+  height: 110px !important;
+  min-height: 110px !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+.heritage-card .card-img-wrapper img,
+.site-card-item .card-img-wrapper img,
+.site-card-thumb img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+/* Typography & Info */
+.heritage-card .card-info-content,
+.site-card-item .card-info-content {
+  padding: 8px 10px 10px 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  justify-content: space-between !important;
+}
+
+.heritage-card .card-title,
+.site-card-item .card-title {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #1A1A1A !important;
+  margin: 0 0 2px 0 !important;
+  line-height: 1.2 !important;
+}
+
+.heritage-card .card-subtitle,
+.site-card-item .card-subtitle {
+  font-size: 11px !important;
+  color: #666666 !important;
+  margin: 0 0 4px 0 !important;
+}
+
+.heritage-card .card-xp-badge,
+.site-card-item .card-xp-badge {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #0C6C7A !important;
+}
+
+/* Ensure the directory grid and cards explicitly capture pointer clicks */
+.directory-screen,
+.trail-view-container,
+.directory-tabs-content,
+.sites-grid,
+.heritage-grid {
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+.heritage-card,
+.site-card-item,
+.directory-card {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  position: relative !important;
+  z-index: 20 !important;
+  user-select: none !important;
+}
+
+/* Ensure inner image and text elements do NOT intercept or block the card click */
+.heritage-card *,
+.site-card-item *,
+.directory-card * {
+  pointer-events: none !important;
+}
+
+.heritage-card button.btn-bookmark,
+.site-card-item button.btn-bookmark {
+  pointer-events: auto !important;
+}
+
+/* Map Screen Viewport */
+.screen.map-screen,
+#map-view,
+.map-view-container {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Leaflet Canvas Element */
+#map,
+#leaflet-map-canvas,
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  background-color: #E2DDD5 !important;
+  z-index: 1 !important;
+}
+
+/* Floating Map Controls & Legends */
+.map-legend-card,
+.map-legend-box,
+.legend-card,
+.map-legend-floating {
+  position: absolute !important;
+  top: 55px !important;
+  right: 14px !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  border-radius: 14px !important;
+  padding: 10px 14px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15) !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+/* Back Button Top Nav */
+.map-back-btn,
+.btn-icon-back,
+#map-back-container {
+  position: absolute !important;
+  top: max(56px, env(safe-area-inset-top, 50px)) !important;
+  left: 16px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  z-index: 500 !important;
+  pointer-events: auto !important;
+}
+
+/* Profile Viewport Container & Card Alignment */
+.profile-screen,
+#profile-view,
+.profile-container {
+  padding: 16px 16px 90px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* User Identity Card: Center-aligned and matching below boxes */
+.profile-user-card,
+.profile-header-card,
+.profile-card,
+.user-identity-box {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 auto 16px auto !important;
+  background: #FFFFFF !important;
+  border-radius: 18px !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 14px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Ensure stats row and list action items share identical width */
+.profile-stats-grid,
+.profile-stats-row,
+.profile-menu-list,
+.profile-action-box {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Live GPS Pulsing Animation Keyframes */
+@keyframes pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* Position Zoom Controls safely below Dynamic Island */
+.leaflet-top.leaflet-left {
+  top: 55px !important;
+  left: 14px !important;
+  z-index: 1000 !important;
+}
+
+.leaflet-bar {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.leaflet-bar a {
+  background-color: #FFFFFF !important;
+  color: #1E293B !important;
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  font-size: 16px !important;
+  font-weight: bold !important;
+}
+
+/* Ensure map screen layout does not alter bottom nav placement */
+.screen.map-screen .bottom-nav,
+.screen.map-screen .tab-bar,
+.screen.map-screen #app-bottom-nav {
+  position: absolute !important;
+  bottom: 12px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 360px !important;
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Dynamic Island & Notch Chassis Geometry */
+.iphone-chassis,
+.phone-mockup,
+.app-viewport {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ensure the Dynamic Island notch is properly centered without pushing content awkwardly */
+.dynamic-island,
+.phone-notch {
+  position: absolute !important;
+  top: 10px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 120px !important;
+  height: 30px !important;
+  background: #000000 !important;
+  border-radius: 20px !important;
+  z-index: 9999 !important;
+  pointer-events: none !important;
+}
+
+/* Safe Area Spacing for All Screens below the Dynamic Island */
+.screen-content,
+.screen,
+.dashboard-screen,
+.directory-screen,
+.site-detail-screen {
+  padding-top: 44px !important; /* Clears the 30px island + 14px comfortable breathing room */
+  box-sizing: border-box !important;
+}
+
+/* Adjust header bar / top actions row */
+.screen-header-bar,
+.top-nav-bar,
+.detail-top-bar {
+  margin-top: 6px !important;
+  padding: 0 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  position: relative !important;
+  z-index: 100 !important;
+}
+
+/* Floating Map UI Overlay */
+.map-top-bar {
+  position: absolute !important;
+  top: 48px !important;
+  left: 16px !important;
+  right: 16px !important;
+  z-index: 1000 !important; /* Above Leaflet map layers (z-index 400) */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  pointer-events: none !important;
+}
+
+.map-top-bar button,
+.map-top-bar a,
+#btn-map-back {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  user-select: none !important;
 }

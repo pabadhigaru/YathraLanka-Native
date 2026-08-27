@@ -10,8 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 
@@ -19,37 +19,7 @@
     <div class="iphone-speaker"></div>
     <div class="iphone-dynamic-island"></div>
     
-    <div id="app-container" class="app-viewport">
-      </div>
-
-    <div class="screen map-screen" id="map-view" style="position: absolute; top: 0; bottom: 0; left: 0; width: 100%; height: 100%; display: none; z-index: 10; pointer-events: none;">
-      <div id="map-back-container" style="position: absolute; top: 20px; left: 16px; z-index: 99999; pointer-events: auto;">
-        <button class="back-button" id="map-back" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal); display: flex; align-items: center; border: none; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">←</button>
-      </div>
-
-      <div class="map-legend-floating" style="position: absolute; top: 20px; right: 16px; z-index: 99998; background: #ffffff; border-radius: 16px; padding: 12px 14px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column; gap: 8px; font-family: 'Outfit', sans-serif; font-size: 11px; font-weight: 700; color: #333333; pointer-events: auto;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="width: 10px; height: 10px; background: #666666; border: 1.5px solid #ffffff; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.3); display: inline-block;"></span>
-          <span>You Are Here</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="width: 12px; height: 12px; background: #EBB34D; border-radius: 50%; display: inline-block;"></span>
-          <span>Hidden Gems (High XP)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="width: 12px; height: 12px; background: #0C6C7A; border-radius: 50%; display: inline-block;"></span>
-          <span>Heritage Trail (Low XP)</span>
-        </div>
-      </div>
-
-      <capacitor-google-map id="yathra-main-map" style="display: block; width: 100%; height: 100%; pointer-events: auto;"></capacitor-google-map>
-    </div>
-    
-    <div id="map-loader" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #FDF8E9 !important; z-index: 99999999; display: none; align-items: center; justify-content: center; flex-direction: column; font-family: 'Outfit', sans-serif;">
-      <div style="font-size: 40px; margin-bottom: 16px; display: inline-block; animation: spin 2s linear infinite;">⏳</div>
-      <div style="font-size: 16px; font-weight: 800; color: var(--color-charcoal); margin-bottom: 8px;">Loading Yathra Map</div>
-      <p style="font-size: 12px; color: var(--color-gray); font-weight: 600;">Preparing heritage exploration interface...</p>
-    </div>
+    <div id="app-container" class="app-viewport"></div>
 
     <div id="auth-modal-container" style="display: none;"></div>
 

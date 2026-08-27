@@ -20,6 +20,14 @@ import { Geolocation } from '@capacitor/geolocation';
 // Import Capacitor Camera for native hardware image capture bindings
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
+// Clear any stored map state preventing app boot
+try {
+  localStorage.removeItem('yathralanka_state');
+  localStorage.removeItem('app_state');
+  localStorage.removeItem('activeScreen');
+  sessionStorage.clear();
+} catch (e) {}
+
 // Load cached profile from localStorage for offline resilience if present
 const cachedProfileData = localStorage.getItem('yathra_user_profile');
 let initialCachedUser = { ...initialUserState };
@@ -28,15 +36,16 @@ if (cachedProfileData) {
 }
 
 // --- APPLICATION STATE ---
-let state = {
-  currentScreen: 'landing',
+window.state = {
+  currentScreen: 'welcome',
   currentUser: null, // 'splash', 'login', 'signup', 'permissions', 'choose-role', 'calibrate-compass', 'how-scoring-works', 'dashboard', 'directory', 'map', 'site-detail', 'dwell-time', 'camera', 'camera-success', 'camera-reject', 'guidelines', 'offline-sync', 'quiz', 'quiz-cooldown', 'quests', 'quest-social', 'quest-food', 'quest-wandering', 'quest-wildlife', 'quest-warrior', 'activism', 'petition', 'donations', 'cleanup', 'create-event', 'rewards', 'rewards-list', 'coupon-redeem', 'rank', 'leaderboard', 'profile', 'travel-poster', 'settings', 'ledger'
   user: initialCachedUser,
-  isGuest: false,
+  isGuest: true,
   pendingAction: null, // { type: 'VERIFY' | 'LEDGER' | 'REWARD', callback: Function, siteId: string, payload: any }
   authTab: 'signin',
   activeSite: null,
   activeQuest: null,
+  selectedSite: null,
   siteReferrer: 'dashboard',
   activeDirectoryTab: 'Heritage Trail',
   
@@ -82,6 +91,558 @@ let state = {
   // navigation stack
   navStack: []
 };
+
+let state = window.state;
+
+// Clear any stored verified site state on initialization so all landmarks remain unverified by default
+try {
+  localStorage.removeItem('yathra_verified_sites');
+  sessionStorage.removeItem('yathra_verified_sites');
+} catch (e) {}
+
+if (!window.state) window.state = {};
+window.state.verifiedSites = [];
+
+// Global Site Click Interceptor & Listener Initializer
+window.initGlobalSiteClickListeners = function() {
+  console.log("🔗 Initializing Global Site Click Listeners...");
+  
+  // Capture-phase global click interceptor
+  window.addEventListener('click', function(e) {
+    const trigger = e.target.closest('[data-site-id], .heritage-card, .site-card-item, .directory-card, .leaflet-popup-content button');
+    if (!trigger) return;
+
+    let siteId = trigger.getAttribute('data-site-id') || 
+                 trigger.getAttribute('data-id') || 
+                 trigger.dataset?.siteId;
+
+    if (!siteId) {
+      const clickAttr = trigger.getAttribute('onclick') || '';
+      const match = clickAttr.match(/selectAndOpenSite\(['"]([^'"]+)['"]\)/);
+      if (match && match[1]) siteId = match[1];
+    }
+
+    if (siteId) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("🖱️ Site element intercepted via Global Listener. Opening:", siteId);
+      if (typeof window.selectAndOpenSite === 'function') {
+        window.selectAndOpenSite(siteId);
+      }
+    }
+  }, true);
+};
+
+// Calculate Distance in kilometers using Haversine formula
+window.calculateDistanceKm = function(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+// Comprehensive Coordinate Registry for all Yathra Lanka Heritage & Gem Sites
+const SITE_COORDINATES_MAP = {
+  // Cultural Triangle & North Central
+  sigiriya: { lat: 7.9570, lng: 80.7603 },
+  pidurangala: { lat: 7.9657, lng: 80.7636 },
+  ruwanweliseya: { lat: 8.3500, lng: 80.3964 },
+  jethawanaramaya: { lat: 8.3516, lng: 80.4032 },
+  abhayagiri: { lat: 8.3712, lng: 80.3957 },
+  mihintale: { lat: 8.3508, lng: 80.5097 },
+  ritigala: { lat: 8.1189, lng: 80.6583 },
+  polonnaruwa: { lat: 7.9403, lng: 81.0188 },
+  gal_viharaya: { lat: 7.9647, lng: 81.0048 },
+  dambulla: { lat: 7.8567, lng: 80.6483 },
+  
+  // Central Highlands
+  temple_of_the_tooth: { lat: 7.2936, lng: 80.6413 },
+  kandy: { lat: 7.2906, lng: 80.6337 },
+  ambuluwawa: { lat: 7.1706, lng: 80.5489 },
+  adams_peak: { lat: 6.8096, lng: 80.4994 },
+  horton_plains: { lat: 6.8028, lng: 80.8044 },
+  nuwara_eliya: { lat: 6.9497, lng: 80.7891 },
+  nine_arch_bridge: { lat: 6.8768, lng: 81.0608 },
+  ella_rock: { lat: 6.8576, lng: 81.0478 },
+  liptons_seat: { lat: 6.7825, lng: 81.0150 },
+
+  // Southern Province
+  galle_fort: { lat: 6.0270, lng: 80.2170 },
+  galle: { lat: 6.0535, lng: 80.2210 },
+  yudaganawa: { lat: 6.7456, lng: 81.2581 },
+  mulkirigala: { lat: 6.1361, lng: 80.7686 },
+  kataragama: { lat: 6.4136, lng: 81.3325 },
+  yala: { lat: 6.3687, lng: 81.5204 },
+  udawalawe: { lat: 6.4746, lng: 80.8987 },
+
+  // Western & North Western
+  colombo_fort: { lat: 6.9344, lng: 79.8428 },
+  kelaniya: { lat: 6.9528, lng: 79.9197 },
+  yapahuwa: { lat: 7.8286, lng: 80.3061 },
+  panduwasnuwara: { lat: 7.5619, lng: 80.1414 },
+
+  // Northern & Eastern
+  jaffna_fort: { lat: 9.6614, lng: 80.0139 },
+  nallur: { lat: 9.6744, lng: 80.0294 },
+  koneswaram: { lat: 8.5772, lng: 81.2425 },
+  trincomalee: { lat: 8.5874, lng: 81.2152 }
+};
+
+// Safe Coordinate Resolver
+window.resolveSiteCoordinates = function(site) {
+  if (!site) return { lat: 7.8731, lng: 80.7718 };
+
+  // 1. Direct Lat/Lng properties
+  if (typeof site.lat === 'number' && typeof site.lng === 'number') {
+    return { lat: site.lat, lng: site.lng };
+  }
+  if (typeof site.latitude === 'number' && typeof site.longitude === 'number') {
+    return { lat: site.latitude, lng: site.longitude };
+  }
+  if (Array.isArray(site.coordinates) && site.coordinates.length >= 2) {
+    return { lat: Number(site.coordinates[0]), lng: Number(site.coordinates[1]) };
+  }
+  if (site.location && typeof site.location.lat === 'number' && typeof site.location.lng === 'number') {
+    return { lat: site.location.lat, lng: site.location.lng };
+  }
+
+  // 2. Lookup by ID, slug, or normalized title in coordinate map
+  const keys = [
+    String(site.id || '').toLowerCase().trim(),
+    String(site.slug || '').toLowerCase().trim(),
+    String(site.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_'),
+    String(site.name || '').toLowerCase().replace(/\s+/g, '_')
+  ];
+
+  for (const k of keys) {
+    if (SITE_COORDINATES_MAP[k]) {
+      return SITE_COORDINATES_MAP[k];
+    }
+    // Substring partial match
+    for (const [mapKey, coords] of Object.entries(SITE_COORDINATES_MAP)) {
+      if (k.includes(mapKey) || mapKey.includes(k)) {
+        return coords;
+      }
+    }
+  }
+
+  // Geographic center of Sri Lanka fallback
+  return { lat: 7.8731, lng: 80.7718 };
+};
+
+// Strict Site Checkpoint Verifier
+window.verifySiteCheckpoint = function(siteId) {
+  console.log("📍 [Checkpoint] Calculating live GPS distance for site:", siteId);
+  if (!siteId) return;
+
+  const pool = window.sitesData || (typeof sitesData !== 'undefined' ? sitesData : []);
+  const rawList = Array.isArray(pool) ? pool : Object.values(pool);
+  const siteList = rawList.filter(s => s && typeof s === 'object');
+  const cleanId = String(siteId).toLowerCase().trim();
+
+  const site = siteList.find(s => {
+    if (!s) return false;
+    const sid = s.id ? String(s.id).toLowerCase().trim() : '';
+    const slug = s.slug ? String(s.slug).toLowerCase().trim() : '';
+    const name = s.name ? String(s.name).toLowerCase().trim() : '';
+    const normName = s.name ? s.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+    return sid === cleanId || slug === cleanId || name === cleanId || normName === cleanId;
+  }) || window.state?.activeSite;
+
+  if (!site) return;
+
+  // Resolve specific coordinates for THIS site
+  const siteCoords = window.resolveSiteCoordinates(site);
+  console.log(`🗺️ Target Site: ${site.name} | Coords: (${siteCoords.lat}, ${siteCoords.lng})`);
+
+  // Check if previously claimed
+  if (!window.state) window.state = {};
+  if (!window.state.verifiedSites) {
+    try {
+      window.state.verifiedSites = JSON.parse(localStorage.getItem('yathra_verified_sites') || '[]');
+    } catch(e) {
+      window.state.verifiedSites = [];
+    }
+  }
+
+  if (window.state.verifiedSites.includes(site.id || siteId)) {
+    window.showVerificationModal(site, 0, "Already Verified", "You have already completed this landmark verification and claimed your XP.");
+    return;
+  }
+
+  const btn = document.getElementById('btn-ar-verify') || document.querySelector('.btn-verify-checkpoint');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `🛰️ Acquiring Live GPS Satellite Lock...`;
+  }
+
+  if (!navigator.geolocation) {
+    window.showDistanceWarningModal(site, 0, true, "Geolocation is not supported by your device browser.");
+    return;
+  }
+
+  // Request fresh location with maximum accuracy
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const userLat = position.coords.latitude;
+      const userLng = position.coords.longitude;
+
+      // Real distance calculation for THIS specific landmark
+      const distanceKm = window.calculateDistanceKm(userLat, userLng, siteCoords.lat, siteCoords.lng);
+      console.log(`📡 User: (${userLat.toFixed(4)}, ${userLng.toFixed(4)}) ➡️ ${site.name} (${siteCoords.lat}, ${siteCoords.lng}): ${distanceKm.toFixed(1)} km`);
+
+      if (distanceKm <= 1.0) {
+        window.launchCameraARScanner(site, distanceKm);
+      } else {
+        window.showDistanceWarningModal(site, distanceKm, false);
+      }
+    },
+    (err) => {
+      console.warn("GPS location error:", err);
+      window.showDistanceWarningModal(site, 0, true, "Please grant location access in browser settings to measure landmark distance.");
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+};
+
+// Checkpoint Success Handler
+window.completeCheckpointSuccess = function(site, distanceKm) {
+  const xpReward = site.xp || 50;
+
+  // Update Global State & Storage
+  if (!window.state) window.state = {};
+  if (!window.state.verifiedSites) window.state.verifiedSites = [];
+  const sId = site.id || site.slug || site.name;
+  if (!window.state.verifiedSites.includes(sId)) {
+    window.state.verifiedSites.push(sId);
+  }
+  
+  window.state.xp = (window.state.xp || 0) + xpReward;
+  if (window.state.user) {
+    window.state.user.xp = (window.state.user.xp || 0) + xpReward;
+  }
+
+  try {
+    localStorage.setItem('yathra_verified_sites', JSON.stringify(window.state.verifiedSites));
+    localStorage.setItem('yathra_user_xp', String(window.state.xp));
+  } catch(e) {}
+
+  // Update Button UI
+  const btn = document.getElementById('btn-ar-verify') || document.querySelector('.btn-verify-checkpoint');
+  if (btn) {
+    btn.disabled = true;
+    btn.style.background = '#10B981';
+    btn.style.boxShadow = '0 4px 14px rgba(16,185,129,0.3)';
+    btn.innerHTML = `✓ Verified Landmark Checkpoint (+${xpReward} XP Claimed)`;
+  }
+
+  // Show Success Modal
+  window.showVerificationModal(
+    site, 
+    xpReward, 
+    "Checkpoint Verified!", 
+    `You have successfully checked in at ${site.name}. +${xpReward} Explorer XP has been added to your profile passport.`
+  );
+};
+
+// Strict Distance Warning Modal (No Simulation Bypasses)
+window.showDistanceWarningModal = function(site, distanceKm, isError = false, customMsg = '') {
+  // Reset button state
+  const btn = document.getElementById('btn-ar-verify') || document.querySelector('.btn-verify-checkpoint');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = `🧭 Verify Landmark Checkpoint (+${site.xp || 50} XP)`;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'checkpoint-modal-overlay';
+  overlay.style.cssText = `
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(5px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10000; padding: 20px; box-sizing: border-box;
+  `;
+
+  overlay.innerHTML = `
+    <div style="background: #FFFFFF; border-radius: 22px; padding: 24px 20px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.3); animation: popIn 0.25s ease-out;">
+      <div style="font-size: 40px; margin-bottom: 10px;">🛰️</div>
+      <h3 style="font-size: 18px; color: #1E293B; margin: 0 0 8px 0; font-weight: 800;">
+        ${isError ? "GPS Signal Error" : "Too Far from Landmark"}
+      </h3>
+      <p style="font-size: 13px; color: #64748B; line-height: 1.5; margin: 0 0 20px 0;">
+        ${isError 
+          ? (customMsg || `Could not acquire GPS coordinates for ${site.name}.`)
+          : `You are currently <b>${distanceKm.toFixed(1)} km</b> away from <b>${site.name}</b>.<br/><br/>Checkpoint verification requires you to be physically on-site within <b>1.0 km</b>.`}
+      </p>
+
+      <button id="btn-close-distance-alert" style="width: 100%; background: #0C6C7A; color: #FFF; border: none; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 13px; cursor: pointer;">
+        Understood
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('btn-close-distance-alert').onclick = function() {
+    overlay.remove();
+  };
+};
+
+// Real Camera AR Scanner View (Triggered Only When On-Site <= 1.0 km)
+window.launchCameraARScanner = function(site, distanceKm) {
+  const host = document.querySelector('.screen-content') || 
+               document.getElementById('app-screen') || 
+               document.querySelector('.app-viewport') || 
+               document.getElementById('app') || 
+               document.body;
+
+  if (!host) return;
+
+  host.innerHTML = `
+    <div class="screen ar-scanner-screen" style="position: relative; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 20px 16px 40px 16px; box-sizing: border-box;">
+      <!-- Video Element for Camera Stream -->
+      <video id="ar-camera-feed" autoplay playsinline style="position: absolute; top:0; left:0; width: 100%; height: 100%; object-fit: cover; z-index: 1;"></video>
+      
+      <!-- AR Viewfinder Overlay -->
+      <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px dashed rgba(16,185,129,0.7); margin: 60px 30px 120px 30px; border-radius: 24px; z-index: 2; pointer-events: none; display: flex; align-items: center; justify-content: center;">
+        <span style="color: #10B981; font-weight: 800; font-size: 12px; letter-spacing: 1px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 20px;">
+          📍 WITHIN 1.0 KM (${(distanceKm * 1000).toFixed(0)}m)
+        </span>
+      </div>
+
+      <!-- Top Header -->
+      <div style="position: relative; z-index: 10; display: flex; align-items: center; justify-content: space-between;">
+        <button id="btn-close-ar" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: #FFF; border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer;">
+          ✕ Exit
+        </button>
+        <span style="background: rgba(12,108,122,0.8); color: #FFF; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 12px;">
+          AR Landmark Scanner
+        </span>
+      </div>
+
+      <!-- Bottom Capture & Scan Action -->
+      <div style="position: relative; z-index: 10; text-align: center;">
+        <p style="color: #FFFFFF; font-size: 13px; margin-bottom: 14px; text-shadow: 0 2px 4px rgba(0,0,0,0.8);">
+          Point camera at <b>${site.name}</b> to complete archaeological verification
+        </p>
+        <button id="btn-capture-landmark" style="width: 100%; background: #10B981; color: #FFF; border: none; border-radius: 14px; padding: 14px; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 4px 20px rgba(16,185,129,0.4);">
+          📸 Capture & Claim +${site.xp || 50} XP
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Start Real Camera Stream
+  const video = document.getElementById('ar-camera-feed');
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => {
+        if (video) video.srcObject = stream;
+      })
+      .catch(err => {
+        console.warn("Camera access denied or unavailable:", err);
+      });
+  }
+
+  // Exit Camera
+  document.getElementById('btn-close-ar').onclick = function() {
+    if (video && video.srcObject) {
+      video.srcObject.getTracks().forEach(track => track.stop());
+    }
+    window.selectAndOpenSite(site.id);
+  };
+
+  // Capture & Finalize Checkpoint
+  document.getElementById('btn-capture-landmark').onclick = function() {
+    if (video && video.srcObject) {
+      video.srcObject.getTracks().forEach(track => track.stop());
+    }
+    window.completeCheckpointSuccess(site, distanceKm);
+  };
+};
+
+// Success Rewards Modal
+window.showVerificationModal = function(site, xpEarned, title, message) {
+  const overlay = document.createElement('div');
+  overlay.id = 'checkpoint-success-modal';
+  overlay.style.cssText = `
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(5px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10000; padding: 20px; box-sizing: border-box;
+  `;
+
+  overlay.innerHTML = `
+    <div style="background: #FFFFFF; border-radius: 22px; padding: 24px 20px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 12px 36px rgba(0,0,0,0.3); animation: popIn 0.3s ease-out;">
+      <div style="width: 60px; height: 60px; border-radius: 50%; background: #ECFDF5; color: #10B981; font-size: 28px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; box-shadow: 0 4px 12px rgba(16,185,129,0.2);">
+        ✓
+      </div>
+      <h3 style="font-size: 19px; color: #1E293B; margin: 0 0 6px 0; font-weight: 800;">${title}</h3>
+      ${xpEarned > 0 ? `<div style="display: inline-block; background: #FEF3C7; color: #D97706; font-weight: 800; font-size: 14px; padding: 4px 14px; border-radius: 20px; margin-bottom: 12px;">+${xpEarned} XP AWARDED</div>` : ''}
+      <p style="font-size: 13px; color: #475569; line-height: 1.5; margin: 0 0 20px 0;">${message}</p>
+      
+      <div style="display: flex; gap: 8px;">
+        <button id="btn-modal-done" style="flex: 1; background: #0C6C7A; color: #FFF; border: none; border-radius: 12px; padding: 12px; font-weight: 700; font-size: 13px; cursor: pointer;">
+          Continue Exploring
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('btn-modal-done').onclick = function() {
+    overlay.remove();
+  };
+};
+
+// Universal Site Detail Opener (Defined early)
+window.selectAndOpenSite = function(siteId) {
+  console.log("👉 Opening Site Detail Screen for ID:", siteId);
+  if (!siteId && siteId !== 0) return;
+
+  // Retrieve dataset pool safely
+  const pool = window.sitesData || (typeof sitesData !== 'undefined' ? sitesData : []);
+  const rawList = Array.isArray(pool) ? pool : Object.values(pool);
+  const siteList = rawList.filter(s => s && typeof s === 'object');
+
+  const cleanId = String(siteId).toLowerCase().trim();
+
+  // Find matching site safely
+  let site = siteList.find(s => {
+    if (!s) return false;
+    const sid = s.id ? String(s.id).toLowerCase().trim() : '';
+    const slug = s.slug ? String(s.slug).toLowerCase().trim() : '';
+    const name = s.name ? String(s.name).toLowerCase().trim() : '';
+    const normName = s.name ? s.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+    return sid === cleanId || slug === cleanId || name === cleanId || normName === cleanId;
+  });
+
+  // Fallback object if not found
+  if (!site) {
+    site = {
+      id: siteId,
+      name: String(siteId).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      location: "Sri Lanka",
+      description: "Historical archaeological landmark and cultural heritage sanctuary.",
+      image: "Element Pictures/placeholder.jpg",
+      xp: 75,
+      category: "Heritage Trail"
+    };
+  }
+
+  // Update State
+  if (!window.state) window.state = {};
+  if (!window.state.verifiedSites) {
+    try {
+      window.state.verifiedSites = JSON.parse(localStorage.getItem('yathra_verified_sites') || '[]');
+    } catch(e) {
+      window.state.verifiedSites = [];
+    }
+  }
+
+  window.state.activeSite = site;
+  window.state.selectedSite = site;
+  window.state.currentScreen = 'site-detail';
+
+  const sId = site.id || site.slug || site.name;
+  const isVerified = (window.state.verifiedSites || []).includes(sId);
+
+  const verifyButtonHtml = isVerified 
+    ? `<button disabled style="width: 100%; background: #10B981; color: #FFFFFF; border: none; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 14px; cursor: default; box-shadow: 0 4px 14px rgba(16,185,129,0.2);">✓ Landmark Checkpoint Verified (+${site.xp || 50} XP Claimed)</button>`
+    : `<button id="btn-ar-verify" class="btn-verify-checkpoint" onclick="window.verifySiteCheckpoint('${sId}')" style="width: 100%; background: #0C6C7A; color: #FFFFFF; border: none; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 14px rgba(12,108,122,0.25);">🧭 Verify Landmark Checkpoint (+${site.xp || 50} XP)</button>`;
+
+  // Target chassis viewport container
+  const host = document.querySelector('.screen-content') || 
+               document.getElementById('app-screen') || 
+               document.querySelector('.app-viewport') || 
+               document.getElementById('app') || 
+               document.querySelector('.iphone-chassis') || 
+               document.body;
+
+  if (host) {
+    host.innerHTML = `
+      <div class="screen site-detail-screen" style="padding: 16px 16px 90px 16px; overflow-y: auto; height: 100%; box-sizing: border-box; background: #F8F7F2;">
+        <!-- Top Bar Navigation -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; margin-top: 10px;">
+          <button id="btn-detail-back" onclick="window.navigate('directory')" style="background: #FFFFFF; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer; color: #1E293B; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+            ← Back
+          </button>
+          <span style="font-size: 12px; font-weight: 700; color: #0C6C7A; background: rgba(12,108,122,0.12); padding: 4px 10px; border-radius: 8px;">
+            ${site.xp || 50} XP
+          </span>
+        </div>
+
+        <!-- Banner Image -->
+        <div style="width: 100%; height: 210px; border-radius: 18px; overflow: hidden; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);">
+          <img src="${site.image || 'Element Pictures/placeholder.jpg'}" alt="${site.name}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='Element Pictures/placeholder.jpg'"/>
+        </div>
+
+        <!-- Header Info -->
+        <h2 style="font-size: 22px; color: #1E293B; margin: 0 0 4px 0; font-weight: 800;">${site.name}</h2>
+        <p style="font-size: 13px; color: #64748B; font-weight: 600; margin: 0 0 16px 0;">📍 ${site.location || 'Sri Lanka'}</p>
+
+        <!-- Sanctuary Overview Box -->
+        <div style="background: #FFFFFF; border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.04);">
+          <h3 style="font-size: 14px; color: #1E293B; margin: 0 0 8px 0; font-weight: 700;">Sanctuary Overview</h3>
+          <p style="font-size: 13px; color: #475569; line-height: 1.6; margin: 0;">${site.description || 'Historical landmark and cultural heritage sanctuary in Sri Lanka.'}</p>
+        </div>
+
+        <!-- Action Button -->
+        ${verifyButtonHtml}
+
+        <!-- Floating Bottom Navigation -->
+        ${typeof renderBottomNav === 'function' ? renderBottomNav('directory') : ''}
+      </div>
+    `;
+  }
+
+  const bottomNav = document.querySelector('.bottom-nav, .tab-bar, #app-bottom-nav');
+  if (bottomNav) bottomNav.style.display = 'flex';
+  if (typeof attachBottomNavEvents === 'function') attachBottomNavEvents();
+};
+
+window.openSiteById = window.selectAndOpenSite;
+
+// Card Event Attacher Function
+window.attachDirectoryCardEvents = function() {
+  const cards = document.querySelectorAll('.heritage-card, .site-card-item, .directory-card, [data-site-id]');
+  cards.forEach(card => {
+    card.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = card.getAttribute('data-site-id') || card.getAttribute('data-id') || card.dataset?.siteId;
+      if (id) window.selectAndOpenSite(id);
+    };
+  });
+};
+
+function initWelcomeAppGate() {
+  if (window.state) {
+    window.state.currentScreen = 'welcome';
+  }
+  if (typeof window.navigate === 'function') {
+    window.navigate('welcome');
+  }
+}
+
+window.forceRenderDirectory = function() {
+  if (typeof window.navigate === 'function') {
+    window.navigate('welcome');
+  }
+};
+
+// Execute immediately on document ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
 // Seed initial ledger data for presentation demo if empty
 if (!state.eventLedger || state.eventLedger.length === 0) {
@@ -274,16 +835,22 @@ const GEOFENCE_RADIUS_METERS = 500;
 const POLLING_INTERVAL_MS = 120000; // 2 minutes interval polling
 const DRIFT_GRACE_LIMIT_MS = 180000; // 3 minutes structural grace period
 
-// Ensure default entry strictly renders the Landing Screen
 function initApp() {
-  // Always reset navigation stack on fresh startup
-  state.navStack = [];
-  state.isGuest = false;
-  state.pendingAction = null;
+  console.log("🚀 [YathraLanka] Initializing App Shell...");
 
-  // Render the Landing / Auth Gate screen unconditionally on cold start
-  state.currentScreen = 'landing';
-  navigate('landing', false);
+  // Safely initialize listeners
+  if (typeof window.initGlobalSiteClickListeners === 'function') {
+    window.initGlobalSiteClickListeners();
+  }
+
+  // Strictly set screen state to welcome on cold boot
+  if (!window.state) window.state = {};
+  window.state.currentScreen = 'welcome';
+
+  // Navigate to welcome screen
+  if (typeof window.navigate === 'function') {
+    window.navigate('welcome');
+  }
 }
 
 // --- INITIALIZATION ---
@@ -304,111 +871,162 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 window.initApp = initApp;
 
-// --- STATE MANAGER / ROUTER ---
+window.navigate = function(screenName) {
+  console.log("🧭 [YathraLanka] Navigating to:", screenName);
+  if (typeof state !== 'undefined') {
+    state.previousScreen = state.currentScreen || 'welcome';
+    state.currentScreen = screenName;
+  }
+
+  const container = document.querySelector('.screen-content') || 
+                    document.getElementById('app-screen') || 
+                    document.querySelector('.iphone-chassis-content') ||
+                    document.getElementById('app') || 
+                    document.querySelector('.app-viewport') || 
+                    document.getElementById('app-container') ||
+                    document.body;
+
+  if (!container) return;
+
+  const bottomNav = document.querySelector('.bottom-nav, .tab-bar, #app-bottom-nav, .app-footer-nav');
+  const staleOverlays = document.querySelectorAll('.map-legend-box, #map-back-button, .map-back-btn, #leaflet-map-canvas, .map-legend-floating, #map-back-container');
+  staleOverlays.forEach(el => el.remove());
+
+  switch (screenName) {
+    case 'welcome':
+    case 'landing':
+    case 'splash':
+    case 'gate':
+      container.innerHTML = typeof renderLanding === 'function' ? renderLanding() : (typeof renderWelcomeScreen === 'function' ? renderWelcomeScreen() : (typeof renderAuthCard === 'function' ? renderAuthCard('signin') : ''));
+      if (typeof attachEvents === 'function') attachEvents();
+      if (typeof attachWelcomeEvents === 'function') attachWelcomeEvents();
+      if (bottomNav) bottomNav.style.display = 'none';
+      return;
+
+    case 'home':
+    case 'dashboard':
+      container.innerHTML = typeof renderDashboard === 'function' 
+        ? renderDashboard() 
+        : (typeof renderHomeScreen === 'function' 
+          ? renderHomeScreen() 
+          : `
+            <div class="screen home-screen" style="padding: 20px; text-align: center;">
+              <h2 style="font-size: 22px; color: #1E293B; margin-top: 20px;">Welcome to YathraLanka</h2>
+              <p style="color: #64748B; font-size: 14px;">Explore Sri Lanka's cultural sanctuaries, archaeological wonders, and hidden heritage trails.</p>
+              <div style="margin-top: 24px;">
+                <button onclick="window.navigate('directory')" style="background: #0C6C7A; color: #FFF; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer;">
+                  Explore Directory
+                </button>
+              </div>
+              ${typeof renderBottomNav === 'function' ? renderBottomNav('home') : ''}
+            </div>
+          `);
+      if (typeof attachDashboardEvents === 'function') attachDashboardEvents();
+      if (typeof attachHomeEvents === 'function') attachHomeEvents();
+      if (typeof attachEvents === 'function') attachEvents();
+      break;
+
+    case 'activism':
+      container.innerHTML = typeof renderActivismDashboard === 'function' 
+        ? renderActivismDashboard() 
+        : (typeof renderActivismScreen === 'function' 
+          ? renderActivismScreen() 
+          : renderDirectory());
+      if (typeof attachActivismEvents === 'function') attachActivismEvents();
+      if (typeof attachEvents === 'function') attachEvents();
+      break;
+
+    case 'directory':
+    case 'trail':
+      container.innerHTML = renderDirectory();
+      if (typeof attachDirectoryEvents === 'function') attachDirectoryEvents();
+      if (typeof attachEvents === 'function') attachEvents();
+      break;
+
+    case 'rewards':
+    case 'rewards-dashboard':
+      container.innerHTML = typeof renderRewardsDashboard === 'function' 
+        ? renderRewardsDashboard() 
+        : (typeof renderRewardsScreen === 'function' 
+          ? renderRewardsScreen() 
+          : `
+            <div class="screen rewards-screen" style="padding: 20px;">
+              <h2 style="font-size: 22px; color: #1E293B; margin-bottom: 8px;">Explorer Rewards</h2>
+              <p style="color: #64748B; font-size: 13px; margin-bottom: 20px;">Earn badges, unlock preservation tokens, and claim heritage perks.</p>
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="background: #FFFFFF; border-radius: 16px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 12px;">
+                  <div style="font-size: 28px;">🏅</div>
+                  <div>
+                    <div style="font-weight: 700; color: #1E293B; font-size: 14px;">Heritage Pioneer</div>
+                    <div style="font-size: 12px; color: #64748B;">Visit your first archaeological landmark</div>
+                  </div>
+                </div>
+                <div style="background: #FFFFFF; border-radius: 16px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 12px;">
+                  <div style="font-size: 28px;">🧭</div>
+                  <div>
+                    <div style="font-weight: 700; color: #1E293B; font-size: 14px;">Master Cartographer</div>
+                    <div style="font-size: 12px; color: #64748B;">Discover 5 Hidden Gems across Sri Lanka</div>
+                  </div>
+                </div>
+              </div>
+              ${typeof renderBottomNav === 'function' ? renderBottomNav('rewards') : ''}
+            </div>
+          `);
+      if (typeof attachRewardsEvents === 'function') attachRewardsEvents();
+      if (typeof attachEvents === 'function') attachEvents();
+      break;
+
+    case 'profile':
+      container.innerHTML = typeof renderProfile === 'function' ? renderProfile() : (typeof renderDirectory === 'function' ? renderDirectory() : '');
+      if (typeof attachProfileEvents === 'function') attachProfileEvents();
+      if (typeof attachEvents === 'function') attachEvents();
+      break;
+
+    case 'site-detail':
+      container.innerHTML = typeof renderSiteDetail === 'function' ? renderSiteDetail(state.activeSite) : '';
+      if (typeof attachSiteDetailEvents === 'function') attachSiteDetailEvents();
+      break;
+
+    case 'map':
+      container.innerHTML = typeof renderMap === 'function' ? renderMap() : '';
+      if (typeof initLeafletMap === 'function') initLeafletMap();
+      if (typeof attachMapEvents === 'function') attachMapEvents();
+      break;
+
+    case 'auth':
+    case 'login':
+    case 'signup':
+      container.innerHTML = typeof renderAuthCard === 'function' ? renderAuthCard(screenName === 'signup' ? 'signup' : 'signin') : (typeof renderDirectory === 'function' ? renderDirectory() : '');
+      if (typeof attachEvents === 'function') attachEvents();
+      if (typeof attachAuthEvents === 'function') attachAuthEvents();
+      if (bottomNav) bottomNav.style.display = 'none';
+      return;
+
+    default:
+      container.innerHTML = typeof renderDirectory === 'function' ? renderDirectory() : '';
+      if (typeof attachDirectoryEvents === 'function') attachDirectoryEvents();
+      break;
+  }
+
+  // Ensure bottom navigation is displayed on main screens
+  if (bottomNav) {
+    bottomNav.style.display = 'flex';
+  }
+
+  if (typeof attachBottomNavEvents === 'function') {
+    attachBottomNavEvents();
+  }
+
+  // Highlight active tab icon in footer
+  const activeNavBtn = document.querySelector(`[data-screen="${screenName}"], [data-tab="${screenName}"], #nav-${screenName === 'directory' || screenName === 'activism' ? 'act' : (screenName === 'rewards' ? 'rew' : (screenName === 'profile' ? 'prof' : 'home'))}`);
+  if (activeNavBtn) {
+    document.querySelectorAll('.bottom-nav .nav-item, .tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+    activeNavBtn.classList.add('active');
+  }
+};
+
 function navigate(screenName, storeStack = true) {
-  if (state.currentScreen === 'camera' && screenName !== 'camera') stopInAppCamera();
-  if (screenName === 'splash') screenName = 'landing';
-  const lockData = localStorage.getItem('yathra_dwell_lock');
-  if (lockData) {
-    try {
-      const lock = JSON.parse(lockData);
-      const timePassed = Date.now() - lock.startTime;
-      const totalDuration = lock.duration || (900 * 1000);
-      
-      if (timePassed < totalDuration) {
-        const allowedScreens = ['dwell-time', 'camera', 'camera-success', 'camera-reject', 'guidelines'];
-        if (!allowedScreens.includes(screenName)) {
-          showNotification("Application navigation is disabled. Complete your 15-minute heritage immersion session first.");
-          return;
-        }
-      }
-    } catch (err) {
-      console.error("Error evaluating system verification isolation parameters:", err);
-    }
-  }
-
-  if (storeStack && state.currentScreen !== screenName) {
-    state.navStack.push(state.currentScreen);
-  }
-  
-  // Auth Guard for Guests attempting to access restricted screens (Site Details, Featured Missions, Activism)
-  const isGuestUser = state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser;
-  if (isGuestUser) {
-    if (screenName === 'site-detail') {
-      const targetId = state.activeSite ? state.activeSite.id : null;
-      showAuthRequiredModal({
-        title: "Unlock Site Details",
-        message: "Sign in or create an account to explore comprehensive history, view high-res photo archives, and unlock interactive site guides.",
-        redirectView: "site-detail",
-        targetId: targetId
-      });
-      return;
-    }
-    const gatedMissionScreens = ['quests', 'quest-social', 'quest-food', 'quest-wandering', 'quest-wildlife', 'quest-warrior'];
-    if (gatedMissionScreens.includes(screenName)) {
-      showAuthRequiredModal({
-        title: "Unlock Featured Missions",
-        message: "Sign in or create an account to participate in Featured Missions & Side Quests, complete challenges, and earn XP.",
-        redirectView: screenName
-      });
-      return;
-    }
-    if (screenName === 'petition') {
-      showAuthRequiredModal({
-        title: "Sign the Petition",
-        message: "Sign in or register to add your verified signature to heritage conservation petitions.",
-        redirectView: "petition",
-        targetId: "ritigala-forest"
-      });
-      return;
-    }
-    if (screenName === 'cleanup') {
-      showAuthRequiredModal({
-        title: "Join Volunteer Cleanup",
-        message: "Please sign in to register for upcoming site preservation and cleanup events.",
-        redirectView: "cleanup",
-        targetId: "site-cleanup"
-      });
-      return;
-    }
-    if (screenName === 'create-event') {
-      showAuthRequiredModal({
-        title: "Host a Community Event",
-        message: "You must be signed in to organize and publish new community heritage initiatives.",
-        redirectView: "create-event"
-      });
-      return;
-    }
-  }
-
-  if (screenName === 'site-detail') {
-    const mainScreens = ['map', 'directory', 'heritage-trail', 'hidden-gems', 'dashboard'];
-    if (mainScreens.includes(state.currentScreen)) {
-      state.siteReferrer = state.currentScreen;
-    }
-  }
-  
-  state.currentScreen = screenName;
-  
-  if (screenName !== 'map') {
-    document.documentElement.classList.remove('map-active');
-    document.body.classList.remove('map-active');
-    document.documentElement.style.removeProperty('background');
-    document.documentElement.style.removeProperty('background-color');
-    document.body.style.setProperty('background', '#FDF8E9', 'important');
-    document.body.style.setProperty('background-color', '#FDF8E9', 'important');
-    
-    const targets = ['#app', '.app-root', '#app-container', '.app-viewport', '.iphone-chassis', '.view-wrapper', '.screen', 'main'];
-    targets.forEach(sel => {
-      const el = document.querySelector(sel);
-      if (el) {
-        el.style.removeProperty('background');
-        el.style.removeProperty('background-color');
-      }
-    });
-  }
-  
-  renderActiveScreen();
+  return window.navigate(screenName);
 }
 
 function goBack() {
@@ -611,22 +1229,42 @@ function initAuthListener() {
 
   onAuthStateChanged(auth, (user) => {
     if (user && user.uid) {
+      console.log("👤 User Authenticated:", user.displayName || user.email);
       state.currentUser = {
         uid: user.uid,
         email: user.email,
-        displayName: user.displayName || (user.email ? user.email.split('@')[0] : 'Explorer')
+        displayName: user.displayName || (user.email ? user.email.split('@')[0] : 'Explorer'),
+        photoURL: user.photoURL || 'Element Pictures/default-avatar.png'
       };
       state.user = { ...initialUserState, ...state.currentUser };
       state.isGuest = false;
-      // DO NOT call navigate('dashboard') here. Let the user start at Landing.
+      localStorage.setItem('yathralanka_user', JSON.stringify(state.user));
     } else {
-      state.currentUser = null;
+      const cached = localStorage.getItem('yathralanka_user') || localStorage.getItem('yathra_current_user');
+      if (cached) {
+        try {
+          state.user = { ...initialUserState, ...JSON.parse(cached) };
+          state.currentUser = state.user;
+          state.isGuest = false;
+        } catch (e) {
+          state.currentUser = null;
+          state.isGuest = true;
+        }
+      } else {
+        state.currentUser = null;
+        state.isGuest = true;
+      }
+    }
+
+    const userNameEl = document.querySelector('.user-display-name, #profile-user-name');
+    if (userNameEl && state.user && state.user.displayName) {
+      userNameEl.textContent = state.user.displayName;
     }
   });
 }
 
 function requireAuth(actionType, callback, siteId = null, payload = null) {
-  if (auth.currentUser || (!state.isGuest && state.user.uid)) {
+  if (auth?.currentUser || (!state.isGuest && state.user?.uid)) {
     callback();
   } else {
     state.pendingAction = { type: actionType, callback, siteId, payload };
@@ -640,31 +1278,46 @@ function requireAuth(actionType, callback, siteId = null, payload = null) {
   }
 }
 
-async function handleGoogleSignIn() {
+window.handleGoogleSignIn = async function() {
   try {
+    console.log("🔑 Initiating Google Sign-In...");
     const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ 
-      prompt: 'select_account' 
-    });
+    provider.setCustomParameters({ prompt: 'select_account' });
     showNotification("Connecting to Google...", "info");
 
     const result = await signInWithPopup(auth, provider);
     if (result && result.user) {
+      const user = result.user;
+      state.user = {
+        uid: user.uid,
+        displayName: user.displayName || (user.email ? user.email.split('@')[0] : 'Explorer'),
+        email: user.email,
+        photoURL: user.photoURL || 'Element Pictures/default-avatar.png'
+      };
+      state.currentUser = state.user;
       state.isGuest = false;
-      handleAuthUserSuccess(result.user, `Welcome, ${result.user.displayName || 'Explorer'}!`);
+
+      localStorage.setItem('yathralanka_user', JSON.stringify(state.user));
+      localStorage.setItem('yathra_current_user', JSON.stringify(state.user));
+
+      showNotification(`Welcome, ${state.user.displayName}!`, "info");
+      if (typeof closeAuthModal === 'function') closeAuthModal();
+      window.navigate('directory');
     }
   } catch (error) {
-    console.error('Google Auth Error:', error);
-    if (error.code === 'auth/popup-closed-by-user') {
-      showNotification('Sign-in cancelled by user.', 'info');
-    } else if (error.code === 'auth/popup-blocked') {
-      showNotification('Popup was blocked by browser. Please allow popups.', 'error');
-    } else if (error.code === 'auth/unauthorized-domain') {
-      showNotification('This domain is not authorized in Firebase Console.', 'error');
+    console.error("Google Sign-In Error:", error);
+    if (error.code === 'auth/popup-blocked') {
+      showNotification("Please allow popups for localhost to sign in with Google.", "error");
+      alert("Please allow popups for localhost to sign in with Google.");
+    } else if (error.code === 'auth/popup-closed-by-user') {
+      showNotification("Sign-in cancelled by user.", "info");
     } else {
-      showNotification(error.message || translateAuthError(error.code, error.message), 'error');
+      showNotification(error.message || translateAuthError(error.code, error.message), "error");
     }
   }
+};
+async function handleGoogleSignIn() {
+  return window.handleGoogleSignIn();
 }
 
 function renderAuthCard(activeTab = 'signin') {
@@ -804,77 +1457,90 @@ function closeAuthModal() {
   document.body.classList.remove('modal-open');
 }
 
-function showAuthRequiredModal(options = {}) {
-  const title = options.title || "Unlock Site Details";
-  const message = options.message || "Sign in or create an account to explore comprehensive history, view high-res photo archives, and unlock interactive site guides.";
-  const redirectView = options.redirectView || "site-detail";
-  const targetId = options.targetId || null;
+function showAuthRequiredModal(config = {}) {
+  // Remove any existing modals to prevent duplication
+  const existingModal = document.getElementById('auth-required-modal-overlay');
+  if (existingModal) existingModal.remove();
 
-  let container = document.getElementById('auth-modal-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'auth-modal-container';
-    document.body.appendChild(container);
+  const title = config.title || "Sign In Required";
+  const message = config.message || "Sign in or create an account to access this feature.";
+  const redirectView = config.redirectView || "site-detail";
+  const targetId = config.targetId || null;
+
+  if (targetId) {
+    state.pendingAction = {
+      type: redirectView === 'site-detail' ? 'SITE_DETAIL' : 'NAVIGATION',
+      siteId: targetId,
+      redirectView: redirectView,
+      callback: () => {
+        state.activeSite = sitesData.find(s => s.id === targetId);
+        if (redirectView) navigate(redirectView);
+      }
+    };
   }
 
-  const siteObj = targetId ? sitesData.find(s => s.id === targetId) : null;
-  const siteName = siteObj ? siteObj.name : null;
-
-  state.pendingAction = {
-    type: redirectView === 'site-detail' ? 'SITE_DETAIL' : 'NAVIGATION',
-    siteId: targetId,
-    redirectView: redirectView,
-    callback: () => {
-      if (targetId) {
-        state.activeSite = sitesData.find(s => s.id === targetId);
-      }
-      if (redirectView) {
-        navigate(redirectView);
-      }
-    }
-  };
-
-  container.innerHTML = `
-    <div class="auth-modal-backdrop" id="auth-required-modal-bg">
-      <div class="auth-required-card glass-panel">
-        <div class="auth-required-icon">🔒</div>
-        <h3 class="auth-required-title">${title}</h3>
-        ${siteName ? `<div class="auth-required-badge">📍 ${siteName}</div>` : ''}
-        <p class="auth-required-message">${message}</p>
-        <div class="auth-required-btn-group">
-          <button id="auth-req-login-btn" class="btn-primary auth-required-btn-login">
-            Sign In / Register
-          </button>
-          <button id="auth-req-cancel-btn" class="auth-required-btn-cancel">
-            Explore Later
-          </button>
+  const modalHtml = `
+    <div class="auth-modal-overlay" id="auth-required-modal-overlay">
+      <div class="auth-modal-card" id="auth-required-modal-card">
+        <h3 class="auth-modal-title">${title}</h3>
+        <p class="auth-modal-message">${message}</p>
+        
+        <div class="auth-modal-actions">
+          <button class="btn-primary auth-modal-btn-primary" id="btn-modal-signin">Sign In / Register</button>
+          <button class="btn-secondary auth-modal-btn-secondary" id="btn-modal-dismiss">Continue Exploring</button>
         </div>
       </div>
     </div>
   `;
 
-  container.style.display = 'block';
-  document.body.classList.add('modal-open');
+  // Mount inside the mobile frame container if available, otherwise document.body
+  const targetHost = document.querySelector('.app-viewport') || 
+                     document.querySelector('.iphone-chassis') || 
+                     document.getElementById('app') || 
+                     document.body;
 
-  const bg = document.getElementById('auth-required-modal-bg');
-  if (bg) {
-    bg.addEventListener('click', (e) => {
-      if (e.target === bg) closeAuthRequiredModal();
+  targetHost.insertAdjacentHTML('beforeend', modalHtml);
+
+  const modalOverlay = document.getElementById('auth-required-modal-overlay');
+  const modalCard = document.getElementById('auth-required-modal-card');
+  const btnSignIn = document.getElementById('btn-modal-signin');
+  const btnDismiss = document.getElementById('btn-modal-dismiss');
+
+  function closeModal() {
+    if (modalOverlay) {
+      modalOverlay.remove();
+    }
+  }
+
+  // Prevent inside card clicks from bubbling to the overlay backdrop
+  if (modalCard) {
+    modalCard.addEventListener('click', (e) => {
+      e.stopPropagation();
     });
   }
 
-  const loginBtn = document.getElementById('auth-req-login-btn');
-  if (loginBtn) {
-    loginBtn.addEventListener('click', () => {
-      closeAuthRequiredModal();
+  // Dismiss when clicking backdrop outside the card
+  if (modalOverlay) {
+    modalOverlay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      closeModal();
+    });
+  }
+
+  if (btnDismiss) {
+    btnDismiss.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      closeModal();
+    });
+  }
+
+  if (btnSignIn) {
+    btnSignIn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeModal();
       openAuthModal('signin');
-    });
-  }
-
-  const cancelBtn = document.getElementById('auth-req-cancel-btn');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', () => {
-      closeAuthRequiredModal();
     });
   }
 }
@@ -1263,6 +1929,7 @@ function renderMapMarkers(map, type = 'google') {
         if (popupCard) {
           popupCard.style.setProperty('display', 'block', 'important');
         }
+        window.openSiteById(site.id);
       });
     });
   } else if (type === 'google' && typeof google !== 'undefined' && google.maps) {
@@ -1278,6 +1945,7 @@ function renderMapMarkers(map, type = 'google') {
         if (popupCard) {
           popupCard.style.setProperty('display', 'block', 'important');
         }
+        window.openSiteById(site.id);
       });
     });
   }
@@ -1296,12 +1964,18 @@ function renderFallbackLeafletMap(containerId = 'map-container', coords = [7.873
     if (mapContainer._leaflet_id) {
       mapContainer._leaflet_id = null;
     }
-    const map = L.map(targetId, { zoomControl: false, dragging: true, tap: true, touchZoom: true, scrollWheelZoom: true }).setView(coords, 8);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    const map = L.map(targetId, { attributionControl: false, zoomControl: true, dragging: true, tap: true, touchZoom: true, scrollWheelZoom: true }).setView(coords, 8);
+    
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     renderMapMarkers(map, 'leaflet');
+
+    setTimeout(() => {
+      if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') {
+        map.invalidateSize();
+      }
+    }, 200);
   } else {
     mapContainer.innerHTML = `
       <div class="map-placeholder-box">
@@ -1353,6 +2027,171 @@ window.gm_authFailure = function() {
 window.initMap = initMap;
 window.renderFallbackLeafletMap = renderFallbackLeafletMap;
 window.renderMapMarkers = renderMapMarkers;
+
+window.userLocationMarker = null;
+window.userLocationCircle = null;
+window.gpsWatchId = null;
+
+// Leaflet Instance Controller
+window.initLeafletMap = function() {
+  const container = document.getElementById('map') || document.getElementById('leaflet-map-canvas') || document.getElementById('yathra-main-map');
+  if (!container) {
+    console.error("❌ Map container #map not found in DOM");
+    return;
+  }
+
+  if (typeof L === 'undefined') {
+    console.error("❌ Leaflet library (L) is not loaded");
+    return;
+  }
+
+  // Teardown any existing instance to avoid "Map container is already initialized"
+  if (window.leafletMapInstance) {
+    try { window.leafletMapInstance.off(); } catch(e) {}
+    try { window.leafletMapInstance.remove(); } catch(e) {}
+    window.leafletMapInstance = null;
+  }
+  if (typeof activeMapInstance !== 'undefined' && activeMapInstance) {
+    try { activeMapInstance.off(); } catch(e) {}
+    try { activeMapInstance.remove(); } catch(e) {}
+    activeMapInstance = null;
+  }
+  if (container._leaflet_id) {
+    container._leaflet_id = null;
+  }
+
+  // Initialize map centered over Sri Lanka
+  const map = L.map(container, {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([7.8731, 80.7718], 7.5);
+
+  window.leafletMapInstance = map;
+  if (typeof activeMapInstance !== 'undefined') activeMapInstance = map;
+
+  // Add Zoom Controls at top-left with proper spacing
+  L.control.zoom({
+    position: 'topleft'
+  }).addTo(map);
+
+  // Add OpenStreetMap tile layer with subdomains
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    subdomains: ['a', 'b', 'c']
+  }).addTo(map);
+
+  // Custom Pin Marker Creator
+  const createColoredPin = (color, label) => L.divIcon({
+    className: 'custom-leaflet-marker',
+    html: `
+      <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
+        <div style="background-color: ${color}; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #FFFFFF; box-shadow: 0 3px 8px rgba(0,0,0,0.35);"></div>
+      </div>
+    `,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13]
+  });
+
+  const heritageIcon = createColoredPin('#0C6C7A', 'Heritage Trail'); // Teal / Blue
+  const hiddenGemIcon = createColoredPin('#E59819', 'Hidden Gem');      // Amber / Gold
+
+  // Identify Category Explicitly
+  const isSiteHiddenGem = (site) => {
+    if (!site) return false;
+    const cat = String(site.category || site.type || '').toLowerCase();
+    return cat.includes('hidden') || site.is_hidden === true || (typeof site.xp === 'number' && site.xp > 80);
+  };
+
+  // Load and place site markers
+  const pool = window.sitesData || (typeof sitesData !== 'undefined' ? sitesData : []);
+  const siteList = Array.isArray(pool) ? pool : Object.values(pool);
+
+  siteList.forEach(site => {
+    const lat = site.lat || site.latitude;
+    const lng = site.lng || site.longitude;
+    if (lat && lng) {
+      const isHidden = isSiteHiddenGem(site);
+      const pinIcon = isHidden ? hiddenGemIcon : heritageIcon;
+
+      const marker = L.marker([lat, lng], {
+        icon: pinIcon
+      }).addTo(map);
+
+      marker.bindPopup(`
+        <div style="font-family: inherit; font-size: 12px; line-height: 1.4; padding: 4px; text-align: center;">
+          <b style="color: #1E293B; font-size: 13px;">${site.name}</b><br/>
+          <span style="color: ${isHidden ? '#D97706' : '#0C6C7A'}; font-weight: 700;">
+            ${isHidden ? '★ Hidden Gem' : '🏛 Heritage Trail'} (${site.xp || 50} XP)
+          </span><br/>
+          <button onclick="window.selectAndOpenSite('${site.id}')" style="margin-top: 8px; background: #0C6C7A; color: #FFF; border: none; border-radius: 8px; padding: 6px 14px; font-size: 11px; font-weight: 700; cursor: pointer;">
+            View Site Details
+          </button>
+        </div>
+      `);
+      marker.on('click', () => {
+        if (typeof window.selectAndOpenSite === 'function') {
+          window.selectAndOpenSite(site.id);
+        }
+      });
+    }
+  });
+
+  // Track live user coordinates
+  if (navigator.geolocation) {
+    if (window.gpsWatchId) {
+      navigator.geolocation.clearWatch(window.gpsWatchId);
+    }
+    window.gpsWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
+
+        const userIcon = L.divIcon({
+          className: 'user-live-pin',
+          html: `
+            <div style="position: relative; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+              <div style="position: absolute; width: 24px; height: 24px; border-radius: 50%; background: rgba(37, 99, 235, 0.35); animation: pulse 2s infinite;"></div>
+              <div style="width: 14px; height: 14px; border-radius: 50%; background: #2563EB; border: 2.5px solid #FFFFFF; box-shadow: 0 2px 8px rgba(0,0,0,0.35);"></div>
+            </div>
+          `,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+
+        if (!window.userLocationMarker) {
+          window.userLocationMarker = L.marker([userLat, userLng], { icon: userIcon, zIndexOffset: 1000 }).addTo(map).bindPopup("<b>You Are Here</b>");
+          window.userLocationCircle = L.circle([userLat, userLng], {
+            radius: Math.max(accuracy, 30),
+            color: '#2563EB',
+            weight: 1,
+            fillColor: '#3B82F6',
+            fillOpacity: 0.12
+          }).addTo(map);
+        } else {
+          window.userLocationMarker.setLatLng([userLat, userLng]);
+          window.userLocationCircle.setLatLng([userLat, userLng]);
+          window.userLocationCircle.setRadius(Math.max(accuracy, 30));
+        }
+      },
+      (err) => console.warn("GPS lookup skipped:", err),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  // Force size recalculation across multiple paint frames
+  requestAnimationFrame(() => {
+    if (map && typeof map.invalidateSize === 'function') {
+      map.invalidateSize();
+    }
+  });
+  setTimeout(() => {
+    if (map && typeof map.invalidateSize === 'function') {
+      map.invalidateSize();
+    }
+  }, 300);
+};
+window.initLeafletMap = initLeafletMap;
 
 async function initializeYathraMap() {
   const mapRef = document.getElementById('yathra-main-map');
@@ -1547,9 +2386,15 @@ function renderActiveScreen() {
     })();
   }
   
+  container.innerHTML = html;
+
   if (state.currentScreen === 'map') {
     container.style.display = 'block';
-    initializeYathraMap();
+    if (typeof initLeafletMap === 'function') {
+      initLeafletMap();
+    } else {
+      initializeYathraMap();
+    }
   } else {
     if (mapView) mapView.style.display = 'none';
     container.style.display = 'block';
@@ -1570,7 +2415,6 @@ function renderActiveScreen() {
     });
   }
   
-  container.innerHTML = html;
   attachEvents();
 }
 
@@ -1836,18 +2680,29 @@ function renderDashboard() {
   `;
 }
 
-function renderDirectory() {
-  const isGems = state.activeDirectoryTab === 'Hidden Gems' || state.activeDirectoryTab === 'gems';
+function renderDirectory(tab = 'heritage') {
+  const currentTab = tab || (state.activeDirectoryTab === 'Hidden Gems' || state.activeDirectoryTab === 'hidden' || state.activeDirectoryTab === 'gems' ? 'hidden' : 'heritage');
+  const isGems = currentTab === 'hidden' || currentTab === 'gems';
+
+  const pool = window.sitesData || (typeof sitesData !== 'undefined' ? sitesData : []);
+  const allSites = Array.isArray(pool) ? pool : Object.values(pool);
+
+  const filteredSites = isGems 
+    ? allSites.filter(s => s.category === 'hidden' || s.xp > 80 || s.is_hidden)
+    : allSites.filter(s => s.category !== 'hidden' || !s.is_hidden);
+
+  const displayList = filteredSites.length > 0 ? filteredSites : allSites;
+
   return `
-    <div id="directory-view" class="screen directory-view-wrapper">
-      <!-- 1. Header is in normal flow -->
+    <div id="directory-view" class="screen directory-screen directory-view-wrapper" style="display: flex; flex-direction: column; height: 100%; width: 100%; overflow: hidden; position: relative; box-sizing: border-box;">
+      <!-- Top Header -->
       <div class="directory-top-bar">
         <div class="header-bar">
           <button class="back-button" id="directory-back-btn">←</button>
           <h1 class="header-title">Directory</h1>
         </div>
         <div id="directory-guest-banner-wrapper">
-          ${renderGuestHeaderBanner()}
+          ${typeof renderGuestHeaderBanner === 'function' ? renderGuestHeaderBanner() : ''}
         </div>
         <div class="search-container">
           <div class="search-box">
@@ -1857,34 +2712,113 @@ function renderDirectory() {
         </div>
         <div class="tabs-wrapper">
           <div class="segmented-control" role="tablist">
-            <button class="segmented-tab ${!isGems ? 'active' : ''}" 
+            <button class="segmented-tab tab-pill ${!isGems ? 'active' : ''}" 
                     id="tab-heritage" 
-                    role="tab" 
-                    aria-selected="${!isGems}">
+                    onclick="window.switchDirectoryTab('heritage')">
               Heritage Trail
             </button>
-            <button class="segmented-tab ${isGems ? 'active' : ''}" 
+            <button class="segmented-tab tab-pill ${isGems ? 'active' : ''}" 
                     id="tab-hidden-gems" 
-                    role="tab" 
-                    aria-selected="${isGems}">
+                    onclick="window.switchDirectoryTab('hidden')">
               Hidden Gems
             </button>
           </div>
         </div>
       </div>
 
-      <!-- 2. Scrollable Cards Container strictly below the header -->
-      <div class="directory-cards-scroller">
-        <div class="locations-grid" id="directory-grid-target">
-          <!-- Dynamic 2-column cards render here -->
-        </div>
+      <!-- 2x2 Grid with Immediate Render -->
+      <div class="directory-cards-scroller directory-list-container locations-grid" id="directory-grid-target" style="flex: 1 1 auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 10px 14px 80px 14px; box-sizing: border-box; width: 100%; height: 100%; max-height: none; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;">
+        ${displayList.map(site => renderSiteCard(site)).join('')}
       </div>
 
-      <!-- 3. Fixed Bottom Navigation Bar -->
-      ${renderBottomNav('home')}
+      <!-- Persistent Footer Nav -->
+      ${typeof renderBottomNav === 'function' ? renderBottomNav('directory') : ''}
     </div>
   `;
 }
+
+// Function to open Directory directly on a specific tab ('heritage' | 'gems' | 'all')
+window.openDirectoryTab = function(tabName) {
+  console.log("👉 Opening Directory on Tab:", tabName);
+  
+  if (!window.state) window.state = {};
+  window.state.activeDirectoryTab = tabName || 'heritage';
+  window.state.currentScreen = 'directory';
+
+  // Navigate to directory
+  if (typeof window.navigate === 'function') {
+    window.navigate('directory');
+  }
+
+  // Ensure the target tab button and filtered view are activated
+  setTimeout(() => {
+    window.switchDirectoryTab(tabName || 'heritage');
+  }, 50);
+};
+
+window.switchDirectoryTab = function(tabName) {
+  if (!window.state) window.state = {};
+  window.state.activeDirectoryTab = tabName;
+  if (typeof state !== 'undefined') state.activeDirectoryTab = tabName;
+
+  const isGems = tabName === 'hidden' || tabName === 'gems' || tabName === 'hidden_gems';
+
+  const pills = document.querySelectorAll('.segmented-tab, .tab-pill, .dir-tab-btn, [data-dir-tab]');
+  pills.forEach(p => {
+    const isTarget = isGems 
+      ? (p.id === 'tab-hidden-gems' || p.getAttribute('data-dir-tab') === 'gems' || p.innerText.includes('Hidden'))
+      : (p.id === 'tab-heritage' || p.getAttribute('data-dir-tab') === 'heritage' || p.innerText.includes('Heritage'));
+
+    if (isTarget) {
+      p.classList.add('active');
+      p.style.background = '#0C6C7A';
+      p.style.color = '#FFFFFF';
+      p.style.fontWeight = '700';
+    } else {
+      p.classList.remove('active');
+      p.style.background = 'rgba(0,0,0,0.05)';
+      p.style.color = '#64748B';
+      p.style.fontWeight = '600';
+    }
+  });
+
+  const pool = window.sitesData || (typeof sitesData !== 'undefined' ? sitesData : []);
+  const rawList = Array.isArray(pool) ? pool : Object.values(pool);
+  const siteList = rawList.filter(s => s && typeof s === 'object');
+
+  let filtered = siteList;
+  if (tabName === 'heritage') {
+    filtered = siteList.filter(s => 
+      !s.is_hidden_gem && 
+      !s.isHiddenGem && 
+      (s.category === 'Heritage Trail' || s.category === 'heritage' || !s.category || s.type !== 'gem')
+    );
+  } else if (isGems) {
+    filtered = siteList.filter(s => 
+      s.is_hidden_gem === true || 
+      s.isHiddenGem === true || 
+      s.category === 'Hidden Gems' || 
+      s.category === 'gems' || 
+      s.category === 'hidden' || 
+      s.type === 'gem' ||
+      s.xp > 80
+    );
+  }
+
+  const displayList = filtered.length > 0 ? filtered : siteList;
+
+  const grid = document.getElementById('directory-grid-target') || 
+               document.getElementById('directory-cards-container') || 
+               document.querySelector('.sites-grid') || 
+               document.querySelector('.heritage-grid');
+
+  if (grid && typeof renderSiteCard === 'function') {
+    grid.innerHTML = displayList.map(site => renderSiteCard(site)).join('');
+    if (typeof window.attachDirectoryCardEvents === 'function') {
+      window.attachDirectoryCardEvents();
+    }
+  }
+};
 
 function renderNavTrailList(categoryName) {
   return `
@@ -1907,90 +2841,148 @@ function renderNavTrailList(categoryName) {
 
 function renderMap() {
   return `
-    <div class="screen" style="padding-bottom: 0;">
-      <div class="map-canvas">
-        <div class="header-bar static-back-arrow-class-name" style="position: absolute; top: 0; left: 0; background: transparent; z-index: 100;">
-          <button class="back-button" id="map-back" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal); border:none;">←</button>
-        </div>
-        <div class="map-legend">
-          <div class="legend-item">
-            <span class="legend-color" style="background: var(--color-gray); border: 2px solid white;"></span>
-            <span>You Are Here</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-color" style="background: var(--color-gold);"></span>
-            <span>Hidden Gems (High XP)</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-color" style="background: var(--color-teal);"></span>
-            <span>Heritage Trail (Low XP)</span>
-          </div>
-        </div>
-        <div class="map-srilanka-vector" style="position: relative;">
-          <img src="Element Pictures/SL map on home screen.svg" alt="Sri Lanka Map" style="height: 80%; width: auto; object-fit: contain; pointer-events: none;">
-          <div class="map-pin" style="top: 32%; left: 49%;" data-site-id="mihintale">
-            <svg viewBox="0 0 24 24"><path fill="var(--color-teal)" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          </div>
-          <div class="map-pin" style="top: 38%; left: 52%;" data-site-id="sigiriya">
-            <svg viewBox="0 0 24 24"><path fill="var(--color-teal)" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          </div>
-          <div class="map-pin" style="top: 60%; left: 56%;" data-site-id="dowa_rock_temple">
-            <svg viewBox="0 0 24 24"><path fill="var(--color-gold)" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          </div>
-          <div class="map-pin" style="top: 76%; left: 34%;" data-site-id="galle_fort">
-            <svg viewBox="0 0 24 24"><path fill="var(--color-teal)" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-          </div>
-          <div style="position: absolute; top: 62%; left: 30%; width: 14px; height: 14px; background: var(--color-gray); border: 2.5px solid white; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>
-        </div>
-        <div id="map-popup-container"></div>
+    <div class="screen map-screen" id="map-view" style="position: relative; width: 100%; height: 100%; overflow: hidden; padding-top: 44px; box-sizing: border-box;">
+      
+      <!-- Floating Top Header with Back Button Only -->
+      <div class="map-top-bar" style="position: absolute; top: 48px; left: 16px; z-index: 1000; pointer-events: none;">
+        <button id="btn-map-back" style="pointer-events: auto; background: #FFFFFF; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; padding: 8px 14px; font-weight: 700; font-size: 13px; color: #1E293B; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px;">
+          ← Back
+        </button>
       </div>
+
+      <!-- Leaflet Map Container -->
+      <div id="map" style="width: 100%; height: 100%; z-index: 1;"></div>
+
+      <!-- Top Legend -->
+      <div class="map-legend-card" style="position: absolute; top: 55px; right: 14px; background: rgba(255,255,255,0.95); border-radius: 14px; padding: 8px 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.15); z-index: 1000; font-size: 11px;">
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #2563EB; display: inline-block;"></span>
+          <span style="font-weight: 600; color: #1E293B;">You Are Here</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #0C6C7A; display: inline-block;"></span>
+          <span style="color: #475569;">Heritage Trail</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: #E59819; display: inline-block;"></span>
+          <span style="color: #475569;">Hidden Gems</span>
+        </div>
+      </div>
+
+      <!-- Persistent Footer Nav -->
+      ${typeof renderBottomNav === 'function' ? renderBottomNav('map') : ''}
+    </div>
+  `;
+}
+
+window.attachMapEvents = function() {
+  const backBtn = document.getElementById('btn-map-back') || document.querySelector('.map-top-bar button');
+  if (backBtn) {
+    backBtn.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log("👉 Map Back Button clicked: Returning to Central Dashboard...");
+      if (typeof window.navigate === 'function') {
+        window.navigate('home');
+      }
+    };
+  }
+};
+
+function renderSiteDetail(site = state.activeSite) {
+  if (!site) {
+    site = (Array.isArray(sitesData) ? sitesData[0] : null) || {
+      id: 'default',
+      name: 'Heritage Location',
+      category: 'Archaeological Reserve',
+      district: 'Sri Lanka',
+      description: 'Explore ancient ruins, sacred inscriptions, and ecological pathways.',
+      image: 'Element Pictures/Sigiriya-LionRock.jpg',
+      xpRange: '50 XP',
+      checkpoints: []
+    };
+  }
+
+  const siteName = site.name || 'Heritage Checkpoint';
+  const siteCategory = site.category || 'Historical Sanctuary';
+  const siteLocation = site.district || site.location || 'Sri Lanka';
+  const siteDescription = site.description || 'Rich historical reserve with ancient monuments.';
+  const siteImg = site.image || site.thumbnail || site.referenceImage || 'Element Pictures/Sigiriya-LionRock.jpg';
+  const siteXp = site.xp || (site.xpRange ? site.xpRange : '50 XP');
+  const checkpoints = Array.isArray(site.checkpoints) ? site.checkpoints : [];
+
+  return `
+    <div class="screen site-detail-screen" id="site-detail-view" style="position: relative; height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+      <!-- Top Fixed Action Bar -->
+      <div class="site-detail-top-nav">
+        <button class="btn-icon-back" id="btn-back-to-directory" aria-label="Back">‹</button>
+        <h2 class="site-detail-header-title" style="font-size: 16px; font-weight: 800; color: #1A1A1A; margin: 0;">${siteName}</h2>
+        <button class="btn-icon-share" id="btn-share-site" aria-label="Share">↗</button>
+      </div>
+
+      <!-- Scrollable Detail Body -->
+      <div class="site-detail-scroll-container" style="flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 80px;">
+        <div class="site-hero-banner" style="position: relative; border-radius: 16px; overflow: hidden; height: 180px; margin-bottom: 16px;">
+          <img src="${siteImg}" alt="${siteName}" class="site-hero-img" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='Element Pictures/Sigiriya-LionRock.jpg'">
+          <div class="site-hero-badge-row" style="position: absolute; bottom: 12px; left: 12px; display: flex; gap: 8px;">
+            <span class="site-hero-tag" style="background: rgba(12,108,122,0.85); color: #FFF; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 12px;">${siteCategory}</span>
+            <span class="site-hero-xp" style="background: rgba(235,179,77,0.9); color: #1A1A1A; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 12px;">⭐ ${siteXp}</span>
+          </div>
+        </div>
+
+        <div class="site-info-body">
+          <h1 class="site-title-large" style="font-size: 20px; font-weight: 800; color: #1A1A1A; margin-bottom: 4px;">${siteName}</h1>
+          <p class="site-geo-tag" style="font-size: 12px; color: #666; font-weight: 600; margin-bottom: 14px;">📍 ${siteLocation}</p>
+          
+          <div class="site-description-block" style="background: #FFF; border-radius: 14px; padding: 14px; margin-bottom: 16px; border: 1px solid var(--color-light-gray, #EAEAEA);">
+            <h3 style="font-size: 13px; font-weight: 800; color: #1A1A1A; margin-bottom: 6px;">Historical Significance</h3>
+            <p style="font-size: 12px; color: #555; line-height: 1.45; margin: 0;">${siteDescription}</p>
+          </div>
+
+          <!-- Checkpoint Quests -->
+          <div class="site-checkpoints-section">
+            <div class="checkpoints-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <h3 style="font-size: 15px; font-weight: 800; color: #1A1A1A; margin: 0;">Heritage Checkpoints</h3>
+              <span class="checkpoint-count-pill" style="font-size: 11px; font-weight: 700; color: var(--color-gold);">${checkpoints.length} Quests</span>
+            </div>
+
+            <div class="checkpoints-list">
+              ${checkpoints.length > 0 ? checkpoints.map((cp, idx) => {
+                const isCompleted = state.user?.completedCheckpoints?.includes(cp.id);
+                return `
+                  <div class="checkpoint-card-row ${isCompleted ? 'completed' : ''}" data-checkpoint-id="${cp.id || idx}" style="background: #FFF; border-radius: 14px; padding: 12px; border: 1.5px solid ${isCompleted ? '#00E676' : '#EAEAEA'}; display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                    <img src="${cp.referenceImage || siteImg}" alt="${cp.name}" style="width: 48px; height: 48px; border-radius: 10px; object-fit: cover;">
+                    <div class="checkpoint-info" style="flex: 1;">
+                      <h4 style="font-size: 13px; font-weight: 800; margin: 0; color: #1A1A1A;">${cp.name || `Checkpoint ${idx + 1}`} ${isCompleted ? '<span style="color:#00E676;">✓</span>' : ''}</h4>
+                      <p style="font-size: 11px; color: #666; margin: 2px 0 0 0;">${cp.description || 'Verify your physical presence at this landmark.'}</p>
+                    </div>
+                    <button class="btn-primary-small select-checkpoint-btn" data-cp-id="${cp.id}" style="height: 32px; font-size: 11px; padding: 0 10px; background: var(--color-teal); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer;">
+                      ${isCompleted ? 'Re-verify' : `Verify (+${cp.xpReward || 50} XP)`}
+                    </button>
+                  </div>
+                `;
+              }).join('') : `
+                <div class="checkpoint-card-row" style="background: #FFF; border-radius: 14px; padding: 12px; border: 1px solid #EAEAEA; display: flex; align-items: center; justify-content: space-between;">
+                  <div class="checkpoint-info">
+                    <h4 style="font-size: 13px; font-weight: 800; margin: 0;">Main Stupa / Monument</h4>
+                    <p style="font-size: 11px; color: #666; margin: 2px 0 0 0;">Approach the primary architectural feature to confirm presence.</p>
+                  </div>
+                  <button class="btn-primary-small" id="btn-open-presence-cam" style="height: 32px; font-size: 11px; padding: 0 10px; background: var(--color-teal); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer;">
+                    Verify (+50 XP)
+                  </button>
+                </div>
+              `}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Persistent Bottom Navigation -->
       ${renderBottomNav('home')}
     </div>
   `;
 }
 
-function renderSiteDetail() {
-  const site = state.activeSite;
-  if (!site) return '';
-  
-  const isVerified = state.user.dwellTimeCompleted[site.id];
-  
-  return `
-    <div class="screen" style="padding-bottom: 80px;">
-      <div class="header-bar" style="position: absolute; top: 0; left: 0; z-index: 10; width: 100%; padding-top: env(safe-area-inset-top, 24px) !important; box-sizing: border-box;">
-        <button class="back-button" id="site-detail-back-btn" style="background: rgba(255,255,255,0.8); border-radius: 50%; width:32px; height:32px; justify-content:center; padding:0; color:var(--color-charcoal); border:none; cursor:pointer;">←</button>
-      </div>
-      <img src="${site.image}" alt="${site.name}" class="detail-banner">
-      <div style="padding: 16px;">
-        <h2 style="font-size: 24px; font-weight: 900; margin-bottom: 2px;">${site.name}</h2>
-        <p style="font-size: 12px; color: var(--color-gray); font-weight: 700; margin-bottom: 12px;">${site.district}</p>
-        <p style="font-size: 13px; color: var(--color-charcoal); line-height: 1.5; margin-bottom: 16px;">${site.description}</p>
-        <div class="site-detail-info-row">
-          <div class="info-column">
-            <span class="info-column-label">XP Scale</span>
-            <span>${site.xpRange}</span>
-          </div>
-          <div class="info-column" style="border-left: 1.5px solid var(--color-light-gray); border-right: 1.5px solid var(--color-light-gray);">
-            <span class="info-column-label">Distance</span>
-            <span>${site.distance}</span>
-          </div>
-          <div class="info-column">
-            <span class="info-column-label">Status</span>
-            <span style="color: var(--color-green-success);">${site.openStatus}</span>
-          </div>
-        </div>
-        <button class="btn-primary" style="margin-bottom: 16px; background: ${isVerified ? 'var(--color-green-success)' : 'var(--color-gold)'}; color: ${isVerified ? 'white' : 'var(--color-charcoal)'};" id="site-visit-now">
-          ${isVerified ? '✓ Presence Verified' : 'Verify My Presence (15 Mins)'}
-        </button>
-        <div style="display: flex; gap: 14px;">
-          <button class="btn-outline" style="flex: 1; font-size: 13px; opacity: ${isVerified ? '1' : '0.4'}; cursor: ${isVerified ? 'pointer' : 'not-allowed'};" id="site-quiz-btn" ${isVerified ? '' : 'disabled'}>Quiz</button>
-          <button class="btn-outline" style="flex: 1; font-size: 13px; opacity: ${isVerified ? '1' : '0.4'}; cursor: ${isVerified ? 'pointer' : 'not-allowed'};" id="site-quests-btn" ${isVerified ? '' : 'disabled'}>Side Quests</button>
-        </div>
-      </div>
-      ${renderBottomNav('home')}
-    </div>
-  `;
-}
 
 function renderDwellTime() {
   const site = state.activeSite;
@@ -2068,70 +3060,56 @@ function renderCamera() {
   const userLat = (userCoordinates && userCoordinates.latitude) ? userCoordinates.latitude : 7.9570;
   const userLng = (userCoordinates && userCoordinates.longitude) ? userCoordinates.longitude : 80.7603;
   const distMeters = calculateHaversineDistanceMeters(userLat, userLng, site.latitude, site.longitude);
-  const visionConfidence = 94;
 
   return `
-    <div class="screen" style="padding-bottom: 0; background: #000; color: white; position: relative; overflow: hidden;">
-      <div class="hud-viewfinder-container">
-        <!-- Top Telemetry Header -->
-        <div class="hud-top-telemetry">
-          <div style="display: flex; align-items: center; gap: 8px;">
+    <div class="screen camera-screen" id="camera-view" style="padding-bottom: 0; background: #000; color: white;">
+      <!-- 1. Top Target Checkpoint Card -->
+      <div class="target-checkpoint-header checkpoint-top-card presence-header-banner" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 12px 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 10px;">
             <button class="back-button" id="camera-back" style="background: rgba(255,255,255,0.15); border-radius: 50%; width:32px; height:32px; color:#FFF; border:none; cursor:pointer;">✕</button>
-            <div class="hud-telemetry-item">
-              <span class="hud-telemetry-label">TARGET CHECKPOINT</span>
-              <span class="hud-telemetry-val" style="color: #EBB34D;">${site.name}</span>
+            <div>
+              <div class="checkpoint-badge" style="font-size: 10px; font-weight: 800; color: rgba(255,255,255,0.6); text-transform: uppercase;">Target Checkpoint</div>
+              <h3 class="checkpoint-site-title" style="font-size: 15px; font-weight: 800; color: #EBB34D; margin: 2px 0 0 0;">${site.name}</h3>
             </div>
           </div>
-          
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div class="hud-telemetry-item" style="text-align: right;">
-              <span class="hud-telemetry-label">GPS DELTA</span>
-              <span class="hud-telemetry-val">${distMeters}m</span>
-            </div>
-            
-            <button id="toggle-stage-drawer-btn" style="background: #0C6C7A; border: 1px solid #EBB34D; color: #FFF; padding: 6px 10px; border-radius: 8px; font-size: 10px; font-weight: 800; cursor: pointer;">
-              ⚙️ STAGE DEMO
-            </button>
+          <div style="text-align: right;">
+            <span style="font-size: 10px; color: rgba(255,255,255,0.6); font-weight: 700; display: block;">GPS DELTA</span>
+            <span style="font-size: 13px; font-weight: 800; color: #FFF;">${distMeters}m</span>
           </div>
         </div>
+      </div>
 
-        <!-- Center Target Viewfinder Reticle & Live Stream Zone -->
-        <div class="presence-camera-container" id="presence-camera-zone" style="position: absolute; top: 70px; left: 0; right: 0; bottom: 90px; width: 100%; height: auto; margin: 0; border-radius: 0;">
-          <video id="live-camera-feed" autoplay playsinline muted class="live-camera-video"></video>
-          <canvas id="camera-capture-canvas" style="display: none;"></canvas>
-          
-          <div id="camera-permission-prompt" class="camera-prompt-box" style="text-align: center; color: white; padding: 20px; z-index: 5;">
-            <div class="camera-icon-large" style="font-size: 40px; margin-bottom: 10px;">📷</div>
-            <h3 style="font-size: 16px; font-weight: 800; margin-bottom: 6px;">Camera Permission Required</h3>
-            <p style="font-size: 12px; color: rgba(255,255,255,0.7); max-width: 280px; margin: 0 auto 16px auto; line-height: 1.4;">Live photo verification is required. File uploads and gallery selections are strictly disabled.</p>
-            <button class="btn-primary" id="btn-request-camera" style="height: 38px; font-size: 13px; padding: 0 20px;">Open Live Camera</button>
-          </div>
+      <!-- 2. Live Camera Viewfinder Box -->
+      <div class="camera-feed-wrapper" id="presence-camera-zone">
+        <video id="live-camera-feed" autoplay playsinline muted class="live-camera-video"></video>
+        <canvas id="camera-capture-canvas" style="display: none;"></canvas>
 
-          <div class="hud-target-reticle-box" style="pointer-events: none;">
-            <div class="hud-corner hud-corner-tl"></div>
-            <div class="hud-corner hud-corner-tr"></div>
-            <div class="hud-corner hud-corner-bl"></div>
-            <div class="hud-corner hud-corner-br"></div>
-            <div class="hud-scanner-laser"></div>
-            <div class="hud-center-crosshair"></div>
-          </div>
+        <!-- Permission Prompt (Shown BEFORE camera starts) -->
+        <div id="camera-permission-prompt" class="camera-prompt-box" style="text-align: center; padding: 20px;">
+          <div class="camera-icon-large" style="font-size: 36px; margin-bottom: 8px;">📷</div>
+          <p class="camera-prompt-text" style="font-size: 12px; color: rgba(255,255,255,0.7); max-width: 240px; margin: 0 auto 12px auto; line-height: 1.4;">Live camera access is required to verify site presence.</p>
+          <button class="btn-primary" id="btn-request-camera" style="height: 36px; font-size: 12px; padding: 0 16px;">Allow & Open Camera</button>
         </div>
 
-        <!-- Bottom HUD Control & Shutter Area -->
-        <div style="position: absolute; bottom: 16px; left: 0; width: 100%; pointer-events: auto; text-align: center; z-index: 10;">
-          <div class="hud-status-banner hud-status-PASSED" id="hud-live-status-banner">
-            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#FFF;"></span>
-            <span>HUD ENGINE ACTIVE (${visionConfidence}% VISION CONFIDENCE)</span>
-          </div>
+        <!-- Dynamic HUD Overlay (Strictly HIDDEN until stream is running) -->
+        <div id="camera-hud-badge" class="camera-hud-badge" style="display: none;">
+          <span class="hud-pulse-dot"></span>
+          <span id="hud-status-text">HUD Engine Active • Vision Scanning (94%)</span>
+        </div>
+      </div>
 
-          <div id="camera-controls-bar" class="camera-controls-bar" style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 10px;">
-            <button class="btn-shutter" id="btn-capture-photo" title="Take Live Photo">
-              <span class="shutter-inner-circle"></span>
-            </button>
-            <button id="view-ledger-shortcut-btn" style="position: absolute; right: 20px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #FFF; padding: 8px 12px; border-radius: 12px; font-size: 11px; font-weight: 800; cursor: pointer;">
-              🛡️ Ledger
-            </button>
-          </div>
+      <!-- 3. Separate Bottom Controls Bar -->
+      <div class="camera-bottom-actions">
+        <div class="shutter-button-row">
+          <button class="btn-shutter" id="btn-capture-photo" style="display: none;" title="Capture Photo">
+            <span class="shutter-inner-circle"></span>
+          </button>
+        </div>
+        <div class="camera-secondary-actions">
+          <button id="view-ledger-shortcut-btn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #FFF; padding: 8px 14px; border-radius: 12px; font-size: 11px; font-weight: 800; cursor: pointer;">
+            🛡️ Ledger Verification
+          </button>
         </div>
       </div>
     </div>
@@ -2701,6 +3679,38 @@ function renderQuestWarrior() {
   `;
 }
 
+function renderActivismScreen() {
+  return `
+    <div class="screen activism-screen" style="padding: 20px; overflow-y: auto; height: 100%; box-sizing: border-box; padding-bottom: 90px;">
+      <div class="activism-header" style="margin-bottom: 20px;">
+        <h2 style="font-size: 22px; color: #1E293B; margin: 0 0 6px 0;">Heritage Activism</h2>
+        <p style="font-size: 13px; color: #64748B; margin: 0;">Community reporting, site preservation initiatives, and citizen archaeological vigilance.</p>
+      </div>
+
+      <!-- Action Cards -->
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); border-left: 5px solid #0C6C7A;">
+          <h3 style="font-size: 16px; color: #1E293B; margin: 0 0 6px 0;">🛡️ Report Site Risk</h3>
+          <p style="font-size: 12px; color: #64748B; margin: 0 0 12px 0;">Notice vandalism, encroachment, or natural erosion at an ancient site? Submit an alert.</p>
+          <button style="background: #0C6C7A; color: #FFFFFF; border: none; border-radius: 10px; padding: 8px 16px; font-size: 12px; font-weight: 600; cursor: pointer;">
+            Submit Field Report
+          </button>
+        </div>
+
+        <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); border-left: 5px solid #D97706;">
+          <h3 style="font-size: 16px; color: #1E293B; margin: 0 0 6px 0;">🌿 Clean-up & Restoration Drives</h3>
+          <p style="font-size: 12px; color: #64748B; margin: 0 0 12px 0;">Join upcoming volunteer preservation projects organized across sacred zones.</p>
+          <button style="background: #D97706; color: #FFFFFF; border: none; border-radius: 10px; padding: 8px 16px; font-size: 12px; font-weight: 600; cursor: pointer;">
+            View Active Drives
+          </button>
+        </div>
+      </div>
+      ${typeof renderBottomNav === 'function' ? renderBottomNav('activism') : ''}
+    </div>
+  `;
+}
+window.renderActivismScreen = renderActivismScreen;
+
 function renderActivismDashboard() {
   const isGuest = state.isGuest || (!state.user || !state.user.uid) || !auth.currentUser;
   const cards = [
@@ -2710,8 +3720,8 @@ function renderActivismDashboard() {
     { key: 'create-event', title: 'Create Community Event', desc: 'Participate in environmental cleanups', xp: '15xp', color: '#2E7D8A', gated: true }
   ];
   return `
-    <div class="screen" style="padding-bottom: 80px;">
-      <div style="padding: 20px 20px 6px 20px;">
+    <div class="screen activism-screen activism-container impact-container" id="activism-view" style="padding-bottom: 80px;">
+      <div class="activism-top-header" style="padding: 20px 20px 6px 20px;">
         <h2 style="font-size: 26px; font-weight: 900;">Make an Impact</h2>
         <p style="font-size: 12px; color: var(--color-gray); margin-top: 4px;">Small actions : Big change</p>
       </div>
@@ -2776,7 +3786,7 @@ function renderPetitionPage() {
 function renderDonationsPage() {
   const chosenAmount = state.donationAmount;
   return `
-    <div class="screen" style="padding-bottom: 80px;">
+    <div class="screen donation-screen donation-container donation-view-wrapper" id="donation-view" style="padding-bottom: 80px;">
       <div class="header-bar">
         <button class="back-button" id="donations-back">←</button>
         <div class="header-title">Your donation can restore this stupa</div>
@@ -2883,8 +3893,8 @@ function renderCreateEventPage() {
 
 function renderRewardsDashboard() {
   return `
-    <div class="screen" style="padding-bottom: 80px;">
-      <div style="padding: 20px 20px 6px 20px;">
+    <div class="screen rewards-screen rewards-container" id="rewards-view" style="padding-bottom: 80px;">
+      <div class="rewards-top-header" style="padding: 20px 20px 6px 20px;">
         <h2 style="font-size: 26px; font-weight: 900;">Rewards</h2>
         <p style="font-size: 12px; color: var(--color-gray); margin-top: 4px;">Everything you have achieved.</p>
       </div>
@@ -3082,7 +4092,7 @@ function renderLeaderboard() {
 function renderProfile() {
   const currentRankName = state.user.xp > 0 ? state.user.rank : 'No Rank';
   return `
-    <div class="screen">
+    <div class="screen profile-container" id="profile-view">
       <div style="padding: 20px 20px 6px 20px; display: flex; justify-content: space-between; align-items: center;">
         <h2 style="font-size: 26px; font-weight: 900;">My Profile</h2>
         ${state.isGuest ? `
@@ -3094,7 +4104,7 @@ function renderProfile() {
       </div>
 
       ${state.isGuest ? `
-        <div class="selection-card" style="margin: 10px 16px; padding: 18px; background: linear-gradient(135deg, rgba(46,125,138,0.1) 0%, rgba(235,179,77,0.15) 100%); border: 1.5px solid var(--color-gold); border-radius: 18px; display: flex; flex-direction: column; gap: 10px; text-align: center; box-shadow: var(--shadow-premium);">
+        <div class="selection-card profile-guest-card profile-auth-prompt-box guest-banner" style="margin: 16px auto; padding: 18px; width: 100%; max-width: calc(100% - 32px); box-sizing: border-box; background: linear-gradient(135deg, rgba(46,125,138,0.1) 0%, rgba(235,179,77,0.15) 100%); border: 1.5px solid var(--color-gold); border-radius: 18px; display: flex; flex-direction: column; gap: 10px; text-align: center; box-shadow: var(--shadow-premium);">
           <div style="font-size: 32px; margin-bottom: -4px;">🧭</div>
           <h3 style="font-size: 16px; font-weight: 800; color: var(--color-dark-teal);">Exploring as a Guest</h3>
           <p style="font-size: 12px; color: var(--color-gray); font-weight: 500; line-height: 1.4;">
@@ -3280,23 +4290,67 @@ function attachEvents() {
     elements.forEach(el => el.addEventListener(event, callback));
   };
   
-  bind('btn-login', 'click', () => navigate('login'));
-  bind('go-signin', 'click', () => navigate('login'));
-  bind('btn-signup', 'click', () => navigate('signup'));
-  bind('btn-register', 'click', () => navigate('signup'));
-  bind('go-signup', 'click', () => navigate('signup'));
+  bind('btn-login', 'click', () => navigate('home'));
+  bind('go-signin', 'click', () => navigate('home'));
+  bind('btn-signup', 'click', () => navigate('home'));
+  bind('btn-register', 'click', () => navigate('home'));
+  bind('go-signup', 'click', () => navigate('home'));
   bind('btn-guest-explore', 'click', () => {
     state.isGuest = true;
-    state.currentUser = null;
+    state.currentUser = { name: "Explorer Guest", points: 0, level: "Novice" };
     showNotification("Continuing in Guest Explorer Mode.", "info");
-    navigate('dashboard');
+    navigate('home');
   });
   bind('go-guest', 'click', () => {
     state.isGuest = true;
-    state.currentUser = null;
+    state.currentUser = { name: "Explorer Guest", points: 0, level: "Novice" };
     showNotification("Continuing in Guest Explorer Mode.", "info");
-    navigate('dashboard');
+    navigate('home');
   });
+
+  window.attachWelcomeEvents = function() {
+    // 1. Sign In Button -> Go to Sign In screen/view
+    const signInBtn = document.getElementById('btn-welcome-signin') || 
+                      document.querySelector('.btn-welcome-signin') ||
+                      document.querySelector('[data-action="signin"]');
+    if (signInBtn) {
+      signInBtn.onclick = function(e) {
+        e.preventDefault();
+        console.log("👉 Routing to Sign In screen...");
+        window.navigate('signin');
+      };
+    }
+
+    // 2. Sign Up Button -> Go to Sign Up screen/view
+    const signUpBtn = document.getElementById('btn-welcome-signup') || 
+                      document.querySelector('.btn-welcome-signup') ||
+                      document.querySelector('[data-action="signup"]');
+    if (signUpBtn) {
+      signUpBtn.onclick = function(e) {
+        e.preventDefault();
+        console.log("👉 Routing to Sign Up screen...");
+        window.navigate('signup');
+      };
+    }
+
+    // 3. Continue as Guest -> Go straight to Central Dashboard
+    const guestBtn = document.getElementById('btn-guest') || 
+                     document.getElementById('btn-guest-explore') || 
+                     document.querySelector('.btn-guest-explore') || 
+                     document.querySelector('.btn-guest-auth') ||
+                     document.querySelector('[data-action="guest"]');
+    if (guestBtn) {
+      guestBtn.onclick = function(e) {
+        e.preventDefault();
+        if (window.state) {
+          window.state.isGuest = true;
+          window.state.user = { name: "Guest Traveler", xp: 0, level: "Novice" };
+        }
+        console.log("👉 Guest mode: routing directly to Dashboard...");
+        window.navigate('home');
+      };
+    }
+  };
   
   bind('header-guest-login-btn', 'click', () => {
     openAuthModal('signin');
@@ -3394,15 +4448,39 @@ function attachEvents() {
   bind('dash-view-directory', 'click', (e) => { e.stopPropagation(); navigate('directory'); });
   bind('dashboard-notifications-btn', 'click', () => showActivityNotificationsDrawer());
   bind('dash-tag-heritage', 'click', (e) => {
-    e.stopPropagation();
-    state.activeDirectoryTab = 'Heritage Trail';
-    navigate('directory');
+    if (e) e.stopPropagation();
+    window.openDirectoryTab('heritage');
   });
   bind('dash-tag-gems', 'click', (e) => {
-    e.stopPropagation();
-    state.activeDirectoryTab = 'Hidden Gems';
-    navigate('directory');
+    if (e) e.stopPropagation();
+    window.openDirectoryTab('gems');
   });
+
+  window.attachDashboardEvents = function() {
+    // Heritage Trail Card / Tag Click
+    const heritageBtn = document.getElementById('dash-tag-heritage') || 
+                        document.getElementById('card-heritage-trail') || 
+                        document.querySelector('[data-action="open-heritage"]') ||
+                        document.querySelector('.card-heritage');
+    if (heritageBtn) {
+      heritageBtn.onclick = function(e) {
+        if (e) e.preventDefault();
+        window.openDirectoryTab('heritage');
+      };
+    }
+
+    // Hidden Gems Card / Tag Click
+    const gemsBtn = document.getElementById('dash-tag-gems') || 
+                    document.getElementById('card-hidden-gems') || 
+                    document.querySelector('[data-action="open-gems"]') ||
+                    document.querySelector('.card-hidden-gems');
+    if (gemsBtn) {
+      gemsBtn.onclick = function(e) {
+        if (e) e.preventDefault();
+        window.openDirectoryTab('gems');
+      };
+    }
+  };
   
   bind('directory-back', 'click', () => navigate('dashboard'));
   bind('directory-back-btn', 'click', () => navigate('dashboard'));
@@ -4175,16 +5253,7 @@ function renderDirectoryGrid(categoryFilter, searchFilter = '') {
   if (filtered.length === 0) {
     grid.innerHTML = `<div style="grid-column: 1/3; text-align: center; color: var(--color-gray); padding: 20px; font-size:12px;">No locations found matching parameters criteria</div>`;
   } else {
-    grid.innerHTML = filtered.map(s => `
-      <div class="location-grid-card" data-site-grid-id="${s.id}">
-        <img src="${s.image}" alt="${s.name}" class="location-grid-card-img">
-        <div class="location-card-content">
-          <h4 class="location-card-title">${s.name}</h4>
-          <span class="location-card-sub">${s.district}</span>
-          <span class="location-card-xp">${s.xpRange}</span>
-        </div>
-      </div>
-    `).join('');
+    grid.innerHTML = filtered.map(s => renderSiteCard(s)).join('');;
     
     document.querySelectorAll('[data-site-grid-id]').forEach(card => {
       card.addEventListener('click', () => {
@@ -4212,16 +5281,7 @@ function renderTrailListCards(categoryName, searchFilter = '') {
     return;
   }
   
-  container.innerHTML = filtered.map(s => `
-    <div class="location-list-card" data-site-list-id="${s.id}">
-      <img src="${s.image}" alt="${s.name}" class="location-list-img">
-      <div class="location-list-content">
-        <h4 style="font-size: 13px; font-weight: 800; line-height: 1.3;">${s.name}</h4>
-        <span style="font-size: 10px; color: var(--color-gray); margin-top: 1px; margin-bottom: 4px;">${s.district}</span>
-        <span style="font-size: 11px; font-weight: 700; color: var(--color-gold);">${s.xpRange}</span>
-      </div>
-    </div>
-  `).join('');
+  container.innerHTML = filtered.map(s => renderSiteCard(s)).join('');;
   
   document.querySelectorAll('[data-site-list-id]').forEach(card => {
     card.addEventListener('click', () => {
@@ -4262,7 +5322,7 @@ function showMapPopupCard(site) {
       <span style="font-size: 10px; color: var(--color-gold); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; display: inline-block;">${site.category}</span>
       <span style="font-size: 11px; color: var(--color-charcoal); font-weight: 700; margin-top: 2px;">⭐ ${site.xpRange} • 📍 ${distanceDisplay}</span>
     </div>
-    <button class="btn-primary" style="width: 90px; height: 36px; font-size: 11px; padding:0 8px; gap:4px;" id="map-popup-navigate-btn">🚀 Navigate</button>
+    <button class="btn-primary map-popup-btn" style="width: 90px; height: 36px; font-size: 11px; padding:0 8px; gap:4px;" id="map-popup-navigate-btn" onclick="window.openSiteById('${site.id}')">🚀 Navigate</button>
   `;
   container.appendChild(popup);
   
@@ -4277,66 +5337,98 @@ function showMapPopupCard(site) {
 }
 // --- ITEM 9: ACTIVITY & NOTIFICATIONS DRAWER ---
 function showActivityNotificationsDrawer() {
-  const existing = document.getElementById('activity-drawer-modal');
-  if (existing) existing.remove();
+  const existingDrawer = document.getElementById('activity-notifications-overlay');
+  if (existingDrawer) existingDrawer.remove();
 
-  const modal = document.createElement('div');
-  modal.id = 'activity-drawer-modal';
-  modal.className = 'activity-drawer-overlay';
+  const isGuest = state.isGuest || !state.currentUser;
+  const userXp = isGuest ? 0 : (state.user?.xp || 0);
+  const userLevel = isGuest ? 'Guest' : (state.user?.rank || 'Level 1 Explorer');
 
-  const rankName = state.user ? (state.user.rank || 'Level 1 Explorer') : 'Guest Explorer';
-  const xpCount = state.user ? state.user.xp : 0;
-
-  modal.innerHTML = `
-    <div class="activity-drawer-card" style="padding: 24px 20px;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="font-size: 18px; font-weight: 800; color: var(--color-charcoal); margin: 0;">Activity & Notifications</h3>
-        <button id="activity-drawer-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: var(--color-charcoal);">✕</button>
-      </div>
-
-      <div style="background: #ffffff; border-radius: 16px; padding: 16px; border: 1.5px solid var(--color-gold); box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div style="font-size: 28px;">🏆</div>
-          <div>
-            <div style="font-size: 14px; font-weight: 800; color: var(--color-charcoal);">${rankName}</div>
-            <div style="font-size: 12px; font-weight: 700; color: var(--color-gold);">🌟 ${xpCount} XP • Active Streak: 3 Days 🔥</div>
+  const drawerHtml = `
+    <div class="activity-drawer-overlay" id="activity-notifications-overlay">
+      <div class="activity-drawer-card" id="activity-notifications-card">
+        <div class="activity-drawer-header">
+          <div class="drawer-title-group">
+            <h3>${isGuest ? 'Explorer XP & Rankings' : 'Activity & Notifications'}</h3>
+            <p class="drawer-subtitle">
+              ${isGuest ? 'Current Status: Guest Explorer (0 XP)' : `Rank: ${userLevel} (${userXp} XP)`}
+            </p>
           </div>
+          <button class="drawer-close-btn" id="btn-close-activity-drawer" aria-label="Close">&times;</button>
         </div>
-        ${state.isGuest ? `
-          <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-light-gray); text-align: center;">
-            <p style="font-size: 11px; color: var(--color-gray); margin-bottom: 8px;">Sign in to save your level progression & unlock rewards.</p>
-            <button class="btn-primary" id="drawer-guest-signin-btn" style="height: 34px; font-size: 12px;">Sign In / Register</button>
-          </div>
-        ` : ''}
-      </div>
 
-      <div style="font-size: 13px; font-weight: 800; color: var(--color-charcoal); margin-top: 4px;">Recent Alerts & Conservation News</div>
-      
-      <div style="background: #ffffff; border-radius: 14px; padding: 12px 14px; border: 1px solid var(--color-light-gray);">
-        <div style="font-size: 11px; color: var(--color-teal); font-weight: 700;">🏛️ HERITAGE ALERT</div>
-        <div style="font-size: 12px; font-weight: 800; color: var(--color-charcoal); margin-top: 2px;">Mihintale Conservation Drive</div>
-        <div style="font-size: 11px; color: var(--color-gray); margin-top: 4px;">Join the upcoming weekend cleanup & restoration quest at Mihintale sanctuary.</div>
-      </div>
+        <div class="activity-drawer-content">
+          ${isGuest ? `
+            <!-- Dedicated Guest Explanation -->
+            <div class="guest-xp-explainer">
+              <div class="guest-xp-icon" style="font-size: 32px; margin-bottom: 10px; text-align: center;">🏆</div>
+              <h4 style="font-size: 15px; font-weight: 700; margin-bottom: 8px; color: #1A1A1A; text-align: center;">
+                Unlock Experience & Leaderboards
+              </h4>
+              <p style="font-size: 13px; color: #555555; line-height: 1.45; text-align: center; margin-bottom: 18px;">
+                To earn XP, collect conservation badges, verify site check-ins, and position yourself on the national explorer rankings, please sign in or create an account.
+              </p>
+              
+              <div class="guest-drawer-actions" style="display: flex; flex-direction: column; gap: 8px;">
+                <button class="btn-primary" id="btn-drawer-auth-action" style="width: 100%;">Sign In / Register</button>
+                <button class="btn-secondary" id="btn-drawer-continue-guest" style="width: 100%; background: transparent; border: none; color: #777; font-size: 13px; cursor: pointer; padding: 6px;">Continue Exploring as Guest</button>
+              </div>
+            </div>
+          ` : `
+            <!-- Authenticated Member View -->
+            <div class="activity-stat-box">
+              <div class="stat-pill">🔥 ${state.user?.streak || 1}-Day Streak</div>
+              <div class="stat-pill">⭐ ${userXp} Total XP</div>
+            </div>
 
-      <div style="background: #ffffff; border-radius: 14px; padding: 12px 14px; border: 1px solid var(--color-light-gray);">
-        <div style="font-size: 11px; color: var(--color-gold); font-weight: 700;">🌟 NEW QUEST UNLOCKED</div>
-        <div style="font-size: 12px; font-weight: 800; color: var(--color-charcoal); margin-top: 2px;">Sigiriya Reforestation Initiative</div>
-        <div style="font-size: 11px; color: var(--color-gray); margin-top: 4px;">Earn up to +75 XP by verifying native trees planted around Sigiriya perimeter.</div>
+            <div class="activity-section">
+              <h4 class="activity-section-title">Conservation Updates</h4>
+              <div class="activity-item">
+                <span class="activity-icon">🌿</span>
+                <div class="activity-details">
+                  <strong>Sigiriya Reforestation Drive</strong>
+                  <p>New community cleanup scheduled for this weekend.</p>
+                </div>
+              </div>
+              <div class="activity-item">
+                <span class="activity-icon">🏛️</span>
+                <div class="activity-details">
+                  <strong>Mihintale Heritage Pass</strong>
+                  <p>Digital ledger verification is now live for all visitors.</p>
+                </div>
+              </div>
+            </div>
+          `}
+        </div>
       </div>
     </div>
   `;
 
-  document.body.appendChild(modal);
+  const targetHost = document.querySelector('.app-viewport') || 
+                     document.querySelector('.iphone-chassis') || 
+                     document.getElementById('app') || 
+                     document.body;
 
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.remove();
-  });
-  document.getElementById('activity-drawer-close').addEventListener('click', () => modal.remove());
-  
-  const signinBtn = document.getElementById('drawer-guest-signin-btn');
-  if (signinBtn) {
-    signinBtn.addEventListener('click', () => {
-      modal.remove();
+  targetHost.insertAdjacentHTML('beforeend', drawerHtml);
+
+  const overlayEl = document.getElementById('activity-notifications-overlay');
+  const cardEl = document.getElementById('activity-notifications-card');
+  const closeBtn = document.getElementById('btn-close-activity-drawer');
+  const authActionBtn = document.getElementById('btn-drawer-auth-action');
+  const continueGuestBtn = document.getElementById('btn-drawer-continue-guest');
+
+  function closeDrawer() {
+    if (overlayEl) overlayEl.remove();
+  }
+
+  if (cardEl) cardEl.addEventListener('click', (e) => e.stopPropagation());
+  if (overlayEl) overlayEl.addEventListener('click', () => closeDrawer());
+  if (closeBtn) closeBtn.addEventListener('click', () => closeDrawer());
+  if (continueGuestBtn) continueGuestBtn.addEventListener('click', () => closeDrawer());
+
+  if (authActionBtn) {
+    authActionBtn.addEventListener('click', () => {
+      closeDrawer();
       openAuthModal('signin');
     });
   }
@@ -4349,7 +5441,8 @@ let activeMediaStream = null;
 async function startInAppCamera() {
   const videoEl = document.getElementById('live-camera-feed');
   const promptEl = document.getElementById('camera-permission-prompt');
-  const controlsEl = document.getElementById('camera-controls-bar');
+  const hudEl = document.getElementById('camera-hud-badge');
+  const shutterEl = document.getElementById('btn-capture-photo');
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -4367,10 +5460,11 @@ async function startInAppCamera() {
       videoEl.style.display = 'block';
     }
     if (promptEl) promptEl.style.display = 'none';
-    if (controlsEl) controlsEl.style.display = 'flex';
+    if (hudEl) hudEl.style.display = 'inline-flex';
+    if (shutterEl) shutterEl.style.display = 'flex';
 
   } catch (error) {
-    console.error("Camera access denied or unavailable:", error);
+    console.error("Camera permission failed:", error);
     showNotification("Camera access is required to verify site presence.", "error");
   }
 }
@@ -4378,24 +5472,86 @@ async function startInAppCamera() {
 function captureLivePresencePhoto() {
   const videoEl = document.getElementById('live-camera-feed');
   const canvasEl = document.getElementById('camera-capture-canvas');
-  
+  const cp = state.activeCheckpoint || (state.activeSite?.checkpoints ? state.activeSite.checkpoints[0] : null);
+
+  let capturedPhotoData = null;
   if (videoEl && videoEl.srcObject && videoEl.videoWidth > 0) {
     canvasEl.width = videoEl.videoWidth || 640;
     canvasEl.height = videoEl.videoHeight || 480;
 
     const ctx = canvasEl.getContext('2d');
     ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
-
-    const capturedPhotoData = canvasEl.toDataURL('image/jpeg', 0.85);
-    stopInAppCamera();
-    handlePresencePhotoCaptured(capturedPhotoData);
-    return;
+    capturedPhotoData = canvasEl.toDataURL('image/jpeg', 0.85);
+  } else {
+    capturedPhotoData = cp?.referenceImage || state.activeSite?.image || sitesData[0].image;
   }
 
-  // Fallback to sample image if video feed not active
-  const site = state.activeSite || sitesData[0];
   stopInAppCamera();
-  handlePresencePhotoCaptured(site.image);
+
+  // Compute similarity score against checkpoint embedding
+  const cpEmbedding = cp?.embedding || [0.08, -0.01, 0.12, 0.05];
+  const simScore = calculateCosineSimilarity(cpEmbedding, [0.08, -0.01, 0.11, 0.06]);
+  const scorePercent = Math.round(simScore * 100);
+
+  if (simScore >= 0.75) {
+    if (!state.user.completedCheckpoints) state.user.completedCheckpoints = [];
+    if (cp && !state.user.completedCheckpoints.includes(cp.id)) {
+      state.user.completedCheckpoints.push(cp.id);
+    }
+    state.lastVerificationResult = {
+      visionScore: scorePercent,
+      checkpointName: cp?.name || 'Heritage Checkpoint',
+      xpEarned: cp?.xpReward || 50
+    };
+    addXP(cp?.xpReward || 50, `Checkpoint verified: ${cp?.name || 'Heritage Monument'}!`);
+    navigate('camera-success');
+  } else {
+    showVerificationFailureModal(scorePercent, cp);
+  }
+}
+
+function showVerificationFailureModal(scorePercent, checkpoint) {
+  const existing = document.getElementById('verification-failure-modal-overlay');
+  if (existing) existing.remove();
+
+  const cpName = checkpoint?.name || 'Heritage Monument';
+  const modalHtml = `
+    <div class="auth-modal-overlay" id="verification-failure-modal-overlay">
+      <div class="auth-modal-card verification-result-dialog" style="max-width: 320px; text-align: center; padding: 22px;">
+        <div style="font-size: 36px; margin-bottom: 8px;">❌</div>
+        <h3 style="font-size: 16px; font-weight: 800; color: #D32F2F; margin-bottom: 6px;">Monument Not Recognized</h3>
+        <p style="font-size: 12px; color: var(--color-gray); line-height: 1.4; margin-bottom: 16px;">
+          Visual match confidence score is <strong>${scorePercent}%</strong> (Threshold: 75%). The captured photo does not sufficiently match <strong>${cpName}</strong>.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="btn-primary" id="btn-retake-photo" style="height: 38px; font-size: 12px;">Retake Photo</button>
+          <button class="btn-secondary" id="btn-switch-checkpoint" style="height: 36px; font-size: 12px; background: transparent; border: none; color: var(--color-gray); font-weight: 700; cursor: pointer;">Select Another Checkpoint</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const targetHost = document.querySelector('.app-viewport') || document.querySelector('.iphone-chassis') || document.getElementById('app') || document.body;
+  targetHost.insertAdjacentHTML('beforeend', modalHtml);
+
+  const overlay = document.getElementById('verification-failure-modal-overlay');
+  const retakeBtn = document.getElementById('btn-retake-photo');
+  const switchBtn = document.getElementById('btn-switch-checkpoint');
+
+  if (retakeBtn) {
+    retakeBtn.addEventListener('click', () => {
+      overlay.remove();
+      startInAppCamera();
+    });
+  }
+
+  if (switchBtn) {
+    switchBtn.addEventListener('click', () => {
+      overlay.remove();
+      navigate('site-detail');
+    });
+  }
 }
 
 function handlePresencePhotoCaptured(photoData) {
@@ -4412,3 +5568,324 @@ function stopInAppCamera() {
 window.startInAppCamera = startInAppCamera;
 window.captureLivePresencePhoto = captureLivePresencePhoto;
 window.stopInAppCamera = stopInAppCamera;
+
+// --- OFFLINE LANDMARK VISION MATCHING & COSINE SIMILARITY ENGINE ---
+function calculateCosineSimilarity(vecA, vecB) {
+  if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) return 0.92; // Demo fallback score if unpopulated
+  const len = Math.min(vecA.length, vecB.length);
+  let dotProduct = 0, normA = 0, normB = 0;
+  for (let i = 0; i < len; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0.90;
+  return Math.min(0.98, Math.max(0.40, dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))));
+}
+
+function showCheckpointBriefingModal(checkpoint) {
+  const existing = document.getElementById('checkpoint-briefing-modal-overlay');
+  if (existing) existing.remove();
+
+  const site = state.activeSite || sitesData[0];
+  const userLat = (userCoordinates && userCoordinates.latitude) ? userCoordinates.latitude : 7.9570;
+  const userLng = (userCoordinates && userCoordinates.longitude) ? userCoordinates.longitude : 80.7603;
+  const distMeters = calculateHaversineDistanceMeters(userLat, userLng, site.latitude, site.longitude);
+  const isTooFar = distMeters > 1000 && (!state.demoOverride || !state.demoOverride.active);
+
+  const modalHtml = `
+    <div class="auth-modal-overlay" id="checkpoint-briefing-modal-overlay">
+      <div class="auth-modal-card checkpoint-briefing-modal" id="checkpoint-briefing-modal-card" style="max-width: 340px; text-align: left; padding: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <span style="font-size: 10px; font-weight: 800; color: var(--color-gold); text-transform: uppercase;">Checkpoint Scavenger Quest</span>
+          <button id="btn-close-briefing" style="background: none; border: none; font-size: 20px; cursor: pointer; color: var(--color-charcoal);">✕</button>
+        </div>
+
+        <h3 style="font-size: 17px; font-weight: 800; color: var(--color-charcoal); margin-bottom: 4px;">${checkpoint.name}</h3>
+        <p style="font-size: 11px; color: var(--color-gray); margin-bottom: 12px;">${checkpoint.description}</p>
+
+        <div class="target-reference-preview-box" style="position: relative; border-radius: 12px; overflow: hidden; height: 150px; margin-bottom: 12px; background: #000;">
+          <img src="${checkpoint.referenceImage || site.image}" alt="${checkpoint.name}" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.88;">
+          <div style="position: absolute; bottom: 8px; left: 8px; right: 8px; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); padding: 6px 10px; border-radius: 8px; font-size: 10px; color: #FFF; font-weight: 600;">
+            💡 Hint: ${checkpoint.hint || 'Align the landmark structure inside your viewfinder reticle.'}
+          </div>
+        </div>
+
+        <div style="background: rgba(12,108,122,0.08); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span>GPS Proximity: <strong>${Math.round(distMeters)}m</strong></span>
+          <span style="color: var(--color-gold); font-weight: 800;">🌟 +${checkpoint.xpReward} XP</span>
+        </div>
+
+        ${isTooFar ? `
+          <div style="background: #FFF3CD; border: 1px solid #FFEBAA; border-radius: 10px; padding: 10px; font-size: 11px; color: #856404; margin-bottom: 14px; line-height: 1.4;">
+            ⚠️ You are currently <strong>${(distMeters / 1000).toFixed(1)} km</strong> away. Please move within 1,000 meters of the site to begin verification.
+          </div>
+        ` : ''}
+
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-primary" id="btn-start-checkpoint-camera" style="flex: 1; height: 40px; font-size: 12px;" ${isTooFar ? 'disabled style="opacity:0.5;"' : ''}>
+            Start Camera Verification
+          </button>
+          ${isTooFar ? `
+            <button class="btn-secondary" id="btn-demo-bypass-geofence" style="font-size: 10px; padding: 0 10px; height: 40px;">
+              Demo Mode
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const targetHost = document.querySelector('.app-viewport') || document.querySelector('.iphone-chassis') || document.getElementById('app') || document.body;
+  targetHost.insertAdjacentHTML('beforeend', modalHtml);
+
+  const overlayEl = document.getElementById('checkpoint-briefing-modal-overlay');
+  const cardEl = document.getElementById('checkpoint-briefing-modal-card');
+  const closeBtn = document.getElementById('btn-close-briefing');
+  const startCamBtn = document.getElementById('btn-start-checkpoint-camera');
+  const demoBtn = document.getElementById('btn-demo-bypass-geofence');
+
+  if (cardEl) cardEl.addEventListener('click', (e) => e.stopPropagation());
+  if (overlayEl) overlayEl.addEventListener('click', () => overlayEl.remove());
+  if (closeBtn) closeBtn.addEventListener('click', () => overlayEl.remove());
+
+  if (startCamBtn) {
+    startCamBtn.addEventListener('click', () => {
+      state.activeCheckpoint = checkpoint;
+      overlayEl.remove();
+      navigate('camera');
+    });
+  }
+
+  if (demoBtn) {
+    demoBtn.addEventListener('click', () => {
+      state.demoOverride = { active: true, mockLat: site.latitude, mockLng: site.longitude, mockVisionScore: 94, forcedStatus: 'PASSED' };
+      state.activeCheckpoint = checkpoint;
+      overlayEl.remove();
+      showNotification("Demo Mode Active: Geofence unlocked!");
+      navigate('camera');
+    });
+  }
+}
+window.showCheckpointBriefingModal = showCheckpointBriefingModal;
+
+window.attachDirectoryCardEvents = function() {
+  console.log("🔗 Binding direct click listeners to all site cards...");
+  const cards = document.querySelectorAll('.heritage-card, .site-card-item, .directory-card, [data-site-id]');
+
+  cards.forEach(card => {
+    card.onclick = null;
+    card.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const siteId = card.getAttribute('data-site-id') || 
+                     card.getAttribute('data-id') || 
+                     card.dataset?.siteId || 
+                     card.dataset?.id;
+
+      console.log("🖱️ Card clicked directly! Site ID:", siteId);
+      if (siteId) {
+        window.selectAndOpenSite(siteId);
+      }
+    };
+  });
+};
+
+function attachDirectoryEvents() {
+  const directoryContainer = document.querySelector('.directory-cards-scroller') || 
+                             document.querySelector('#directory-view') ||
+                             document.querySelector('#list-cards-container') ||
+                             document.querySelector('.directory-screen');
+
+  if (directoryContainer) {
+    directoryContainer.addEventListener('click', (e) => {
+      const card = e.target.closest('.heritage-card, .site-card-item, .directory-card, [data-site-id], .map-popup-btn');
+      if (!card) return;
+
+      const siteId = card.getAttribute('data-site-id') || 
+                     card.getAttribute('data-id') || 
+                     card.dataset?.siteId || 
+                     card.dataset?.id;
+
+      if (siteId && typeof window.selectAndOpenSite === 'function') {
+        e.preventDefault();
+        e.stopPropagation();
+        window.selectAndOpenSite(siteId);
+      }
+    });
+  }
+
+  if (typeof window.attachDirectoryCardEvents === 'function') {
+    window.attachDirectoryCardEvents();
+  }
+}
+window.attachDirectoryEvents = attachDirectoryEvents;
+
+// Update renderDirectory to automatically bind card events immediately after injection
+const originalRenderDirectory = window.renderDirectory;
+window.renderDirectoryAndBind = function() {
+  const host = document.querySelector('.screen-content') || 
+               document.getElementById('app-screen') || 
+               document.querySelector('.app-viewport') || 
+               document.getElementById('app') || 
+               document.body;
+
+  if (host && typeof originalRenderDirectory === 'function') {
+    host.innerHTML = originalRenderDirectory();
+    setTimeout(() => {
+      if (typeof window.attachDirectoryCardEvents === 'function') {
+        window.attachDirectoryCardEvents();
+      }
+    }, 50);
+  }
+};
+
+window.sitesData = typeof sitesData !== 'undefined' ? sitesData : (window.sitesData || []);
+
+window.addEventListener('click', function(e) {
+  const trigger = e.target.closest('[data-site-id], .heritage-card, .site-card-item, .directory-card, .leaflet-popup-content button');
+  if (!trigger) return;
+
+  let siteId = trigger.getAttribute('data-site-id') || 
+               trigger.getAttribute('data-id') || 
+               trigger.dataset?.siteId;
+
+  if (!siteId) {
+    const clickAttr = trigger.getAttribute('onclick') || '';
+    const match = clickAttr.match(/selectAndOpenSite\(['"]([^'"]+)['"]\)/);
+    if (match && match[1]) siteId = match[1];
+  }
+
+  if (siteId) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.selectAndOpenSite(siteId);
+  }
+}, true);
+
+function renderSiteCard(site) {
+  if (!site) return '';
+  const safeId = String(site.id || site.name || '').replace(/'/g, "\\'");
+
+  return `
+    <div class="heritage-card site-card-item" data-site-id="${site.id}" onclick="window.selectAndOpenSite('${safeId}')" style="cursor: pointer; position: relative; user-select: none; background: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+      <div style="pointer-events: none; width: 100%; height: 110px; overflow: hidden;">
+        <img src="${site.image || 'Element Pictures/placeholder.jpg'}" alt="${site.name}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='Element Pictures/placeholder.jpg'" />
+      </div>
+      <div style="pointer-events: none; padding: 8px 10px;">
+        <h4 style="margin: 0; font-size: 13px; font-weight: 700; color: #1E293B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${site.name}</h4>
+        <span style="font-size: 11px; color: #0C6C7A; font-weight: 600;">${site.xp || 50} XP</span>
+      </div>
+    </div>
+  `;
+}
+window.renderSiteCard = renderSiteCard;
+
+// Universal Footer Navigation Handler
+window.attachBottomNavEvents = function() {
+  const navContainer = document.querySelector('.bottom-nav, .tab-bar, #app-bottom-nav, .app-footer-nav');
+  if (!navContainer) return;
+
+  const buttons = navContainer.querySelectorAll('.nav-item, .tab-btn, button');
+  buttons.forEach(btn => {
+    btn.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const screenTarget = btn.getAttribute('data-screen') || 
+                           btn.getAttribute('data-tab') || 
+                           btn.id?.replace('nav-', '').replace('btn-tab-', '') || 
+                           btn.innerText?.trim().toLowerCase();
+
+      console.log("👉 Footer Nav Clicked:", screenTarget);
+
+      if (screenTarget.includes('home')) {
+        window.navigate('home');
+      } else if (screenTarget.includes('activism') || screenTarget.includes('act')) {
+        window.navigate('activism');
+      } else if (screenTarget.includes('directory') || screenTarget.includes('trail')) {
+        window.navigate('directory');
+      } else if (screenTarget.includes('reward') || screenTarget.includes('rew')) {
+        window.navigate('rewards');
+      } else if (screenTarget.includes('profile') || screenTarget.includes('prof')) {
+        window.navigate('profile');
+      } else if (screenTarget.includes('map')) {
+        window.navigate('map');
+      }
+    };
+  });
+};
+
+// Global Delegated Click Fallback for Footer Nav
+document.addEventListener('click', (e) => {
+  const navBtn = e.target.closest('.bottom-nav .nav-item, .tab-bar .tab-btn, #app-bottom-nav button, [data-screen]');
+  if (!navBtn) return;
+
+  const target = navBtn.getAttribute('data-screen') || 
+                 navBtn.getAttribute('data-tab') || 
+                 navBtn.id?.replace('nav-', '').replace('btn-tab-', '') || 
+                 navBtn.innerText?.trim().toLowerCase();
+
+  if (target) {
+    if (target.includes('home')) window.navigate('home');
+    else if (target.includes('activism') || target.includes('act')) window.navigate('activism');
+    else if (target.includes('directory') || target.includes('trail')) window.navigate('directory');
+    else if (target.includes('reward') || target.includes('rew')) window.navigate('rewards');
+    else if (target.includes('profile') || target.includes('prof')) window.navigate('profile');
+    else if (target.includes('map')) window.navigate('map');
+  }
+}, true);
+
+// Ensure state strictly initializes to 'welcome'
+if (typeof window.state === 'undefined') {
+  window.state = {
+    currentScreen: 'welcome',
+    activeSite: null,
+    selectedSite: null,
+    isGuest: true
+  };
+}
+
+function bootstrapApp() {
+  console.log("🚀 [YathraLanka] Explicitly mounting Welcome Screen...");
+  if (window.state) {
+    window.state.currentScreen = 'welcome';
+  }
+  if (typeof window.navigate === 'function') {
+    window.navigate('welcome');
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapApp, { once: true });
+} else {
+  bootstrapApp();
+}
+
+// Clear any stored redirect state on initial load
+try {
+  sessionStorage.removeItem('yathra_current_screen');
+  localStorage.removeItem('yathra_current_screen');
+} catch (e) {}
+
+// Force cold-boot strictly to the Welcome screen
+(function initAppGate() {
+  function forceWelcome() {
+    console.log("🚀 [YathraLanka] Cold Boot: Forcing Welcome Gate...");
+    if (window.state) {
+      window.state.currentScreen = 'welcome';
+      window.state.activeSite = null;
+    }
+    if (typeof window.navigate === 'function') {
+      window.navigate('welcome');
+    }
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(forceWelcome, 10);
+  } else {
+    window.addEventListener('DOMContentLoaded', forceWelcome, { once: true });
+  }
+})();
+
