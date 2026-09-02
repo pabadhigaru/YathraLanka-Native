@@ -40,83 +40,117 @@
   user-select: none;
 }
 
-html,
-body,
-#root,
-.app-layout-wrapper {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100vw !important;
-  min-height: 100vh !important;
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  background-color: #F6F4EB !important; /* Soft background */
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-  font-family: var(--font-body);
-}
-
-#app,
-.app-root,
-main,
-#main-viewport,
-.view-wrapper {
+/* Center Desktop Canvas */
+html, body {
   margin: 0;
   padding: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  width: 100vw;
+  height: 100vh;
+  background-color: #05262D !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Strict Mobile Chassis (iPhone 15/16 Pro Dimensions) */
-.iphone-chassis,
-.mobile-frame,
-#app-frame {
+/* Master Apple iPhone 15 Pro Max Frame (Fixed Standard 390x844 Shell) */
+#app, .phone-frame {
+  width: 390px !important;
+  min-width: 390px !important;
+  max-width: 390px !important;
+  height: 844px !important;
+  min-height: 844px !important;
+  max-height: 844px !important;
+  background-color: #0B5A68 !important;
+  border-radius: 50px !important;
+  border: 12px solid #1A202C !important;
+  box-shadow: 
+    0 25px 60px rgba(0, 0, 0, 0.75), 
+    0 0 0 2px rgba(255, 255, 255, 0.1) !important;
   position: relative !important;
-  width: 393px !important;
-  max-width: 393px !important;
-  min-width: 393px !important;
-  height: 852px !important;
-  max-height: 852px !important;
-  min-height: 852px !important;
-  background: #F8F7F2 !important;
-  border-radius: 54px !important;
-  border: 12px solid #222222 !important;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
   box-sizing: border-box !important;
-  margin: 0 auto !important;
-}
-
-/* Speaker Notch */
-.iphone-speaker {
-  width: 60px;
-  height: 4px;
-  background: #111;
-  border-radius: 2px;
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
+  flex-shrink: 0 !important;
+  transform: scale(0.95); /* Comfortably fits standard 1080p and laptop screens */
+  transform-origin: center center;
 }
 
 /* Dynamic Island Notch */
+.phone-notch-bar {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.phone-notch-pill {
+  width: 120px;
+  height: 24px;
+  background: #000000;
+  border-radius: 20px;
+  margin-top: 6px;
+}
+
+/* Home Indicator Bar */
+.phone-home-indicator {
+  width: 135px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  pointer-events: none;
+}
+
+/* Screen Viewport & Canvas Palette */
+#screen-viewport, 
+.screen-viewport,
+.dashboard-screen {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background-color: #F8F5EE !important;
+}
+
+/* Remove/hide any extra speaker ear-piece bar or duplicate notch elements */
+.speaker,
+.earpiece,
+.phone-speaker,
+.iphone-speaker,
+.notch::before,
+.phone-frame::before,
+.iphone-chassis::before {
+  display: none !important;
+}
+
+/* Keep only single clean Dynamic Island pill */
 .dynamic-island,
 .notch,
-.iphone-dynamic-island {
+.iphone-dynamic-island,
+.phone-notch {
   position: absolute !important;
   top: 10px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
-  width: 120px !important;
-  height: 32px !important;
-  background: #000000 !important;
+  width: 110px !important;
+  height: 28px !important;
+  background-color: #000000 !important;
   border-radius: 20px !important;
   z-index: 10000 !important;
   pointer-events: none !important;
@@ -4283,14 +4317,16 @@ body.map-active .bottom-nav,
 
 /* Ensure the Dynamic Island notch is properly centered without pushing content awkwardly */
 .dynamic-island,
+.notch,
+.iphone-dynamic-island,
 .phone-notch {
   position: absolute !important;
   top: 10px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
-  width: 120px !important;
-  height: 30px !important;
-  background: #000000 !important;
+  width: 110px !important;
+  height: 28px !important;
+  background-color: #000000 !important;
   border-radius: 20px !important;
   z-index: 9999 !important;
   pointer-events: none !important;
@@ -4338,4 +4374,345 @@ body.map-active .bottom-nav,
   pointer-events: auto !important;
   cursor: pointer !important;
   user-select: none !important;
+}
+
+/* Proportional Logo Dimensions for Authentic Auth Screen */
+.welcome-logo, .auth-logo {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  margin: 0 auto 12px auto;
+  display: block;
+}
+
+/* Clean transparent logo rendering & upper zone logo centering for Welcome Screen */
+.welcome-screen {
+  background-color: #0B5A68 !important;
+  color: #FFFFFF !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  height: 100% !important;
+}
+
+.welcome-top-zone {
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#welcome-brand-logo {
+  background-color: transparent !important;
+  mix-blend-mode: normal !important;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.2)) !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  display: block;
+}
+
+/* Button Active Interactions */
+#btn-welcome-signin:active,
+#btn-welcome-signup:active,
+#btn-welcome-guest:active {
+  transform: scale(0.98);
+}
+
+/* Screen 002 Auth Card Styling */
+.auth-screen {
+  background-color: #0B5A68 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.auth-card-box {
+  background: #FFFFFF !important;
+  border-radius: 24px !important;
+  padding: 22px 18px !important;
+  width: 100% !important;
+  max-width: 295px !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25) !important;
+  overflow: hidden !important;
+  min-height: 440px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Universal Back Button Standard */
+.app-universal-back-btn {
+  position: absolute !important;
+  top: 20px !important;
+  left: 18px !important;
+  z-index: 100 !important;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px;
+  padding: 6px 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(8px) !important;
+  color: #FFFFFF !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  box-sizing: border-box;
+}
+
+.app-universal-back-btn:active {
+  transform: scale(0.96);
+}
+
+/* ==========================================================================
+   REBALANCED AUTH SCREEN LAYOUT (ENLARGED LOGO + DOWNWARD SHIFTED FORM)
+   ========================================================================== */
+
+/* 1. Outer Screen Container: Shifted downwards with balanced vertical distribution */
+.auth-screen-container,
+#app .auth-screen-container,
+.phone-frame .auth-screen-container {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important; /* Locks top anchor for 0px jerk */
+  min-height: 100% !important;
+  width: 100% !important;
+  padding-top: 68px !important;            /* Pushes entire layout down into vertical balance */
+  padding-bottom: 30px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+}
+
+/* 2. Emblem Logo Header: Enlarged & Centered in Upper Space */
+.auth-logo-header {
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  height: 168px !important;               /* Fixed container height for zero drift */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-bottom: 28px !important;         /* Generous spacing before the tab pills */
+}
+
+.auth-logo-header img {
+  width: 165px !important;               /* Enlarged logo size */
+  height: 165px !important;
+  object-fit: contain !important;
+  display: block !important;
+  margin: 0 auto !important;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.22)) !important;
+}
+
+/* 3. Tab Pill Switcher: Pixel-Locked Position */
+.auth-tab-pill {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  background: rgba(8, 43, 51, 0.8) !important;
+  border-radius: 12px !important;
+  padding: 4px !important;
+  width: 270px !important;
+  height: 44px !important;                /* Explicit fixed height */
+  box-sizing: border-box !important;
+  margin: 0 auto 16px auto !important;
+}
+
+.auth-tab-btn {
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 100% !important;
+  border-radius: 9px !important;
+  border: none !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  background: transparent !important;
+  color: #94A3B8 !important;
+  transition: background-color 0.2s ease, color 0.2s ease !important;
+}
+
+.auth-tab-btn.active {
+  background: #FFFFFF !important;
+  color: #0A323B !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18) !important;
+}
+
+/* 4. Auth Card Wrapper: Anchored at top, expands purely downwards */
+.auth-card-wrapper {
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  max-width: 340px !important;
+  background: #FFFFFF !important;
+  border-radius: 20px !important;
+  padding: 22px 20px !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22) !important;
+  transform-origin: top center !important;
+}
+
+/* 5. Accordion Transition for Smooth Field Expansion */
+.auth-accordion-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.auth-accordion-wrapper.expanded {
+  grid-template-rows: 1fr;
+}
+
+.auth-accordion-inner {
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.auth-accordion-wrapper.expanded .auth-accordion-inner {
+  opacity: 1;
+}
+
+/* 6. Forgot Password Transition */
+#forgot-password-container {
+  max-height: 30px;
+  overflow: hidden;
+  transition: max-height 0.22s ease, opacity 0.18s ease;
+  opacity: 1;
+}
+
+#forgot-password-container.hidden {
+  max-height: 0;
+  opacity: 0;
+  margin: 0 !important;
+}
+
+/* ==========================================================================
+   RESET PASSWORD CARD (SCREEN 002C) POLISHED STYLES
+   ========================================================================== */
+
+/* Subtitle with balanced multi-line typography */
+.reset-card-subtitle {
+  font-size: 12px !important;
+  color: #64748B !important;
+  text-align: center !important;
+  line-height: 1.55 !important;
+  max-width: 270px !important;
+  margin: 0 auto 18px auto !important;
+  text-wrap: balance !important;
+}
+
+/* Professional Secondary 'Back to Sign In' Button */
+.btn-back-signin {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  background: transparent !important;
+  border: 1.5px solid #CBD5E1 !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #0B5A68 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  box-sizing: border-box !important;
+}
+
+.btn-back-signin:hover {
+  background: #F1F5F9 !important;
+  border-color: #94A3B8 !important;
+}
+
+/* Alert Notification Boxes */
+.auth-alert-box {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-alert-error {
+  background-color: #FEF2F2;
+  border: 1.5px solid #F87171;
+  color: #991B1B;
+}
+
+.auth-alert-success {
+  background-color: #F0FDF4;
+  border: 1.5px solid #4ADE80;
+  color: #166534;
+}
+
+.input-field-error {
+  border-color: #EF4444 !important;
+  background-color: #FEF2F2 !important;
+}
+
+/* Verification Confirmation Modal Styles */
+.verification-modal-card {
+  width: 100%;
+  max-width: 320px;
+  background: #FAF5E8;
+  border-radius: 22px;
+  padding: 28px 22px 24px 22px;
+  box-sizing: border-box;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  border: 1px solid #DFCEAA;
+  text-align: center;
+}
+
+.verification-modal-logo {
+  width: 68px;
+  height: auto;
+  display: block;
+  margin: 0 auto 10px auto;
+}
+
+.verification-modal-brand {
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: #125463;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 2px;
+}
+
+.verification-modal-tagline {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #EAA335;
+  letter-spacing: 0.3px;
+  margin-bottom: 16px;
+}
+
+.verification-info-box {
+  background: #FEF3C7;
+  border: 1.5px solid #F59E0B;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  text-align: left;
+  font-size: 11.5px;
+  color: #92400E;
+  line-height: 1.45;
 }
