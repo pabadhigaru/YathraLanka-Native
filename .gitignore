@@ -3,3 +3,5 @@ node_modules/
 *.log
 Oath Client/
 *.json.secret
+android/app/google-services.json
+
