@@ -13,7 +13,8 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  signInWithCredential
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { GoogleMap } from '@capacitor/google-maps';
@@ -4052,16 +4053,21 @@ window.handleGoogleSignInClick = async function () {
         });
       }
       
-      try {
-        if (typeof GoogleAuth !== 'undefined' && typeof GoogleAuth.signOut === 'function') {
-          await GoogleAuth.signOut();
-        }
-      } catch (e) {}
-
       const googleUser = typeof GoogleAuth !== 'undefined' ? await GoogleAuth.signIn() : null;
       if (loader && loader.parentNode) loader.remove();
 
       if (googleUser) {
+        const idToken = googleUser.authentication?.idToken || googleUser.idToken;
+        if (idToken) {
+          try {
+            const credential = GoogleAuthProvider.credential(idToken);
+            await signInWithCredential(auth, credential);
+            console.log("✅ Native Google Auth credential exchanged with Firebase Auth!");
+          } catch (fbErr) {
+            console.warn("Firebase credential exchange fallback notice:", fbErr);
+          }
+        }
+
         const userSession = {
           name: googleUser.name || googleUser.givenName || googleUser.displayName || 'Explorer',
           email: (googleUser.email || '').toLowerCase().trim(),
