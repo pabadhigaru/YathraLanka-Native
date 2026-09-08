@@ -2,6 +2,9 @@
 apply from: 'variables.gradle'
 
 buildscript {
+    org.gradle.api.artifacts.dsl.RepositoryHandler.metaClass.jcenter = { ->
+        return mavenCentral()
+    }
     repositories {
         google()
         mavenCentral()
@@ -23,19 +26,17 @@ allprojects {
     }
 }
 
-// Enforce Java 17 bytecode targets across all native plugin subprojects cleanly
 subprojects {
     afterEvaluate { project ->
-        if (project.hasProperty("android")) {
+        if (project.hasProperty('android')) {
             project.android {
                 compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_17
-                    targetCompatibility JavaVersion.VERSION_17
+                    sourceCompatibility = JavaVersion.VERSION_17
+                    targetCompatibility = JavaVersion.VERSION_17
                 }
             }
         }
-        // Safe task matching loop that won't throw unknown property errors
-        tasks.matching { it.name.contains("CompileKotlin") || it.name.contains("compileKotlin") }.configureEach {
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
             kotlinOptions {
                 jvmTarget = "17"
             }

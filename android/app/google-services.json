@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1032179534120",
+    "project_id": "yathralanka-2ac43",
+    "storage_bucket": "yathralanka-2ac43.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1032179534120:android:cd757ee46cbd78387ca81d",
+        "android_client_info": {
+          "package_name": "com.yathralanka.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1032179534120-ttht7fjohqbvdrjurvjnudnr9ebggfp8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGr8ulgMr_VFUm11UNo-zPA_Xqoc-qlBo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1032179534120-ttht7fjohqbvdrjurvjnudnr9ebggfp8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

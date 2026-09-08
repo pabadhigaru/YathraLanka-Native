@@ -40,18 +40,17 @@
   user-select: none;
 }
 
-/* Center Desktop Canvas */
+/* Unlocked Master Canvas & Viewport */
 html, body {
   margin: 0;
   padding: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background-color: #05262D !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  overflow: hidden !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  position: relative !important;
 }
 
 /* Master Apple iPhone 15 Pro Max Frame (Fixed Standard 390x844 Shell) */
@@ -829,20 +828,17 @@ input[type="password"] {
 .app-footer-nav {
   position: fixed !important;
   bottom: 0 !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
+  left: 0 !important;
   width: 100% !important;
-  max-width: 480px !important;
-  height: 60px !important;
+  height: 64px !important;
   background: #FFFFFF !important;
-  border-top: 1px solid var(--color-light-gray) !important;
+  border-top: 1px solid #E2E8F0 !important;
+  z-index: 2147483647 !important;
+  transform: translateZ(0) !important;
   display: flex !important;
-  justify-content: space-around !important;
   align-items: center !important;
-  z-index: 999999 !important;
-  padding-bottom: 4px;
-  pointer-events: auto !important;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08) !important;
+  justify-content: space-around !important;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.08) !important;
 }
 
 /* Searcher Card Filter Tags Full Width Justification */
@@ -2932,6 +2928,9 @@ body.map-active .bottom-nav,
   height: 100%;
   object-fit: cover;
   display: none;
+  opacity: 0;
+  background: #000;
+  transition: opacity 0.2s ease;
 }
 
 .camera-controls-bar {
@@ -4715,4 +4714,467 @@ body.map-active .bottom-nav,
   font-size: 11.5px;
   color: #92400E;
   line-height: 1.45;
+}
+
+/* --- WANDERER MAP SKELETON LOADER (CLS FIX) --- */
+.wanderer-map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 175px;
+  background-color: #BDE3F8;
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-skeleton-loading {
+  background: linear-gradient(90deg, #BDE3F8 0%, #D4EEFC 50%, #BDE3F8 100%);
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* --- STANDARDIZED PROTRUDING CARD TITLE BADGES --- */
+.directory-card-thumb-wrapper {
+  position: relative !important;
+  overflow: visible !important;
+  width: 100%;
+  height: 105px;
+  background: #E2E8F0;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.protruding-site-badge {
+  position: absolute;
+  top: -12px;
+  left: 12px;
+  z-index: 2;
+  background: #FFFFFF;
+  color: #0F172A;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+/* --- ROYAL VAULT UI THEME (PROFILE SCREEN) --- */
+.royal-vault-screen {
+  background-color: #F8F5EE !important;
+  background-image: linear-gradient(180deg, #FDF6E2 0%, #F8F5EE 100%) !important;
+  color: #0B5A68 !important;
+  padding-top: max(env(safe-area-inset-top), 48px) !important;
+  padding-bottom: 90px !important;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.royal-gold-border {
+  border: 1px solid rgba(235, 179, 77, 0.4) !important;
+  box-shadow: 0 2px 8px rgba(11, 90, 104, 0.05) !important;
+}
+
+.royal-gold-text {
+  background: linear-gradient(135deg, #0B5A68 0%, #2E7D8A 50%, #0B5A68 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.moonstone-lattice-accent {
+  position: relative;
+}
+
+.moonstone-lattice-accent::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 15%;
+  right: 15%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #EBB34D, transparent);
+  opacity: 0.6;
+}
+
+.avatar-ring-container {
+  position: relative;
+  display: inline-block;
+}
+
+.avatar-edit-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 30px;
+  height: 30px;
+  background: #EBB34D;
+  border: 2px solid #FFFFFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  transition: transform 0.15s ease;
+}
+
+.avatar-edit-badge:active {
+  transform: scale(0.9);
+}
+
+.vault-action-tile {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(11, 90, 104, 0.04);
+}
+
+.vault-action-tile:hover, .vault-action-tile:active {
+  background: #FFFFFF;
+  border-color: #EBB34D;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(11, 90, 104, 0.08);
+}
+
+.map-site-label {
+  background-color: #0B5A68 !important;
+  color: #FFFFFF !important;
+  font-family: inherit !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+  border: 1px solid #E5A93C !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25) !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+}
+
+.map-site-label::before {
+  border-top-color: #0B5A68 !important;
+}
+
+.user-live-pin, .user-pin-wrapper {
+  pointer-events: none !important;
+}
+
+.user-live-pin *, .user-pin-wrapper * {
+  pointer-events: none !important;
+}
+
+/* Camera Viewfinder Video Feed Flash & Play Button Suppression */
+#camera-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+#camera-feed::-webkit-media-controls,
+#camera-feed::-webkit-media-controls-panel,
+#camera-feed::-webkit-media-controls-play-button,
+#camera-feed::-webkit-media-controls-start-playback-button,
+#camera-feed::-webkit-media-controls-enclosure {
+  display: none !important;
+  -webkit-appearance: none !important;
+  opacity: 0 !important;
+}
+
+/* Photo Verification Specimen Option & Overlay Styles */
+.ghost-overlay-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+}
+#ghost-overlay-img {
+  width: 85% !important;
+  max-width: 500px !important;
+  height: auto !important;
+  max-height: 75% !important;
+  object-fit: contain !important;
+  opacity: 0.50 !important;
+  transform: none !important;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.9)) !important;
+}
+
+.ghost-overlay-frame {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.40;
+  pointer-events: none;
+  transition: transform 0.3s ease;
+}
+
+.checkpoint-option-btn {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 8px;
+}
+
+.checkpoint-option-btn:hover, .checkpoint-option-btn:active {
+  border-color: #0B5A68;
+  background: #FDF6E2;
+}
+
+/* ============================================================================
+   TRUE EDGE-TO-EDGE FULLSCREEN FOR MOBILE & NATIVE ANDROID CAPACITOR
+   ============================================================================ */
+@media (max-width: 600px), (max-height: 700px) {
+  html, body {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #F8F5EE !important;
+    display: block !important;
+    overflow-x: hidden !important;
+  }
+
+  #app, 
+  .phone-frame, 
+  #app-container, 
+  .screen-viewport,
+  #screen-viewport,
+  .dashboard-screen,
+  .iphone-chassis {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+    max-height: 100% !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
+    box-sizing: border-box !important;
+  }
+
+  .phone-notch-bar, 
+  .phone-notch-pill, 
+  .dynamic-island, 
+  .iphone-dynamic-island, 
+  .phone-notch, 
+  .phone-home-indicator,
+  .iphone-home-indicator,
+  .speaker,
+  .earpiece,
+  .phone-speaker,
+  .iphone-speaker {
+    display: none !important;
+  }
+}
+
+html.is-capacitor, html.is-android,
+body.is-capacitor, body.is-android, body.is-mobile {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: #F8F5EE !important;
+  display: block !important;
+  overflow-x: hidden !important;
+}
+
+body.is-capacitor #app, 
+body.is-capacitor .phone-frame, 
+body.is-capacitor #app-container, 
+body.is-capacitor .screen-viewport,
+body.is-capacitor #screen-viewport,
+body.is-capacitor .dashboard-screen,
+body.is-capacitor .iphone-chassis,
+body.is-android #app, 
+body.is-android .phone-frame, 
+body.is-android #app-container, 
+body.is-android .screen-viewport,
+body.is-android #screen-viewport,
+body.is-android .dashboard-screen,
+body.is-android .iphone-chassis,
+body.is-mobile #app, 
+body.is-mobile .phone-frame, 
+body.is-mobile #app-container, 
+body.is-mobile .screen-viewport,
+body.is-mobile #screen-viewport,
+body.is-mobile .dashboard-screen,
+body.is-mobile .iphone-chassis {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  max-height: 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  padding-top: env(safe-area-inset-top, 0px) !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  padding-left: env(safe-area-inset-left, 0px) !important;
+  padding-right: env(safe-area-inset-right, 0px) !important;
+  box-sizing: border-box !important;
+}
+
+body.is-capacitor .phone-notch-bar, 
+body.is-capacitor .phone-notch-pill, 
+body.is-capacitor .dynamic-island, 
+body.is-capacitor .iphone-dynamic-island, 
+body.is-capacitor .phone-notch, 
+body.is-capacitor .phone-home-indicator,
+body.is-capacitor .iphone-home-indicator,
+body.is-capacitor .speaker,
+body.is-capacitor .earpiece,
+body.is-capacitor .phone-speaker,
+body.is-capacitor .iphone-speaker,
+body.is-android .phone-notch-bar, 
+body.is-android .phone-notch-pill, 
+body.is-android .dynamic-island, 
+body.is-android .iphone-dynamic-island, 
+body.is-android .phone-notch, 
+body.is-android .phone-home-indicator,
+body.is-android .iphone-home-indicator,
+body.is-android .speaker,
+body.is-android .earpiece,
+body.is-android .phone-speaker,
+body.is-android .iphone-speaker,
+body.is-mobile .phone-notch-bar, 
+body.is-mobile .phone-notch-pill, 
+body.is-mobile .dynamic-island, 
+body.is-mobile .iphone-dynamic-island, 
+body.is-mobile .phone-notch, 
+body.is-mobile .phone-home-indicator,
+body.is-mobile .iphone-home-indicator,
+body.is-mobile .phone-speaker,
+body.is-mobile .iphone-speaker {
+  display: none !important;
+}
+
+/* --- FROZEN STANDARDIZED BOTTOM NAVIGATION FOOTER ACROSS ALL SCREENS --- */
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  position: relative !important;
+  background-color: #05262D !important;
+  -webkit-overflow-scrolling: touch;
+}
+#app {
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  position: relative !important;
+  padding-bottom: 80px !important;
+}
+.global-bottom-nav {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 64px !important;
+  background: #FFFFFF !important;
+  border-top: 1px solid #E2E8F0 !important;
+  z-index: 2147483647 !important;
+
+  transform: translateZ(0) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-around !important;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.08) !important;
+}
+.global-bottom-nav .nav-item, .global-bottom-nav a, .global-bottom-nav button {
+  color: #0B5A68 !important;
+  background: transparent !important;
+}
+.global-bottom-nav .nav-item.active {
+  color: #E5A93C !important;
+  font-weight: 700 !important;
+}
+
+body.camera-active .global-bottom-nav,
+body.modal-active .global-bottom-nav,
+.hidden-nav-forced, #body-direct-global-nav.hidden-nav-forced, body.modal-active #body-direct-global-nav {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+#camera-viewfinder-root, 
+#photo-match-camera-screen, 
+#target-framing-screen, 
+#live-ghost-camera-screen, 
+.presence-camera-container {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483646 !important;
+  background: #000000 !important;
+  overflow: hidden !important;
 }
